@@ -1,0 +1,58 @@
+[
+  {
+    "id": 1,
+    "snippet": "Dual Queue System: Separate steering (interrupt) and follow-up (deferred) message queues",
+    "body": "Please explain further",
+    "section": "Architecture Overview",
+    "ts": "2026-02-11T10:13:44.280481Z"
+  },
+  {
+    "id": 2,
+    "snippet": "Inspired by Pi Agent",
+    "body": "I think pi agent is more \u201chow do I replicate Claude code,\u201d not \u201chow do I wrap Claude code.\u201d As a result I don\u2019t think this is appropriate inspiration. Double check me.",
+    "section": "Architecture Overview",
+    "ts": "2026-02-11T10:14:48.169670Z"
+  },
+  {
+    "id": 3,
+    "snippet": "tasks",
+    "body": "This is missing pointers to child tasks (or parent tasks). I\u2019m not sure which is best. Please assess pros and cons of each and decide",
+    "section": "Database Schema (SQLite)",
+    "ts": "2026-02-11T15:11:05.095067Z"
+  },
+  {
+    "id": 4,
+    "snippet": "position",
+    "body": "What is this?",
+    "section": "Database Schema (SQLite)",
+    "ts": "2026-02-11T15:11:14.915006Z"
+  },
+  {
+    "id": 5,
+    "snippet": "estimated_turns",
+    "body": "This seems low utility and hard to get right. Maybe one that says it will take one turn is enough",
+    "section": "Database Schema (SQLite)",
+    "ts": "2026-02-11T15:12:10.586212Z"
+  },
+  {
+    "id": 6,
+    "snippet": "steering_messages (dual queue from pi-mono)\n\nid, session_id, message, priority, processed, created_at",
+    "body": "Probably not necessary",
+    "section": "Database Schema (SQLite)",
+    "ts": "2026-02-11T15:12:50.998822Z"
+  },
+  {
+    "id": 7,
+    "snippet": "~/.claude/stats-cache.json",
+    "body": "This has historical usage stats, not rate limit info. \n\nI want you to use the real /usage command in Claude code and parse the output\n\nThis is fundamental: you must either spin up Claude code in a tmux session you can send remote keystrokes to or\nTo maintain a session (context) and issue multiple commands (including slash commands) programmatically, you must trick the CLI into thinking it's running in a real terminal. Python's pexpect library is perfect for this.\nThis script spawns the Claude process, waits for the prompt, sends your command, and captures the output.",
+    "section": "Key Implementation Components",
+    "ts": "2026-02-11T15:20:16.410783Z"
+  },
+  {
+    "id": 8,
+    "snippet": "asyncio.create_subprocess_exec(",
+    "body": "See my other comment: may need to be pexpect or tmux",
+    "section": "Key Implementation Components",
+    "ts": "2026-02-11T15:21:46.170712Z"
+  }
+]

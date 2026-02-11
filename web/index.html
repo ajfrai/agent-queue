@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Harness - Task Queue</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🤖 Agent Harness</h1>
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="status-label">Rate Limit:</span>
+                    <span id="rate-limit-status" class="status-value">-/-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Heartbeat:</span>
+                    <span id="heartbeat-status" class="status-indicator">⏸</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Active:</span>
+                    <span id="active-count" class="status-value">0</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Pending:</span>
+                    <span id="pending-count" class="status-value">0</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main content -->
+        <div class="main-content">
+            <!-- Task creation form -->
+            <div class="task-form">
+                <h2>Add New Task</h2>
+                <form id="create-task-form">
+                    <input
+                        type="text"
+                        id="task-title"
+                        placeholder="Task title"
+                        required
+                    />
+                    <textarea
+                        id="task-description"
+                        placeholder="Task description (be specific)"
+                        rows="3"
+                        required
+                    ></textarea>
+                    <div class="form-row">
+                        <label>
+                            Priority:
+                            <input type="number" id="task-priority" value="0" min="0" max="10" />
+                        </label>
+                        <button type="submit">Add Task</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Task queue -->
+            <div class="task-queue">
+                <h2>Task Queue</h2>
+                <div class="filter-tabs">
+                    <button class="filter-tab active" data-filter="all">All</button>
+                    <button class="filter-tab" data-filter="pending">Pending</button>
+                    <button class="filter-tab" data-filter="executing">Executing</button>
+                    <button class="filter-tab" data-filter="completed">Completed</button>
+                    <button class="filter-tab" data-filter="failed">Failed</button>
+                </div>
+                <div id="task-list" class="task-list">
+                    <!-- Tasks will be inserted here -->
+                </div>
+            </div>
+
+            <!-- Session output viewer -->
+            <div id="session-viewer" class="session-viewer hidden">
+                <div class="session-header">
+                    <h3 id="session-title">Session Output</h3>
+                    <button id="close-session">✕</button>
+                </div>
+                <div id="session-output" class="session-output">
+                    <!-- Session output will be displayed here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
