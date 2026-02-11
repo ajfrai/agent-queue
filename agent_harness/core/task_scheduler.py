@@ -96,11 +96,24 @@ class TaskScheduler:
                 f"model={assessment.recommended_model}"
             )
 
-            # If should decompose, keep pending for manual review
-            if assessment.should_decompose:
+            # Check if user flagged this task for decomposition
+            force_decompose = (
+                task.metadata
+                and task.metadata.get("decompose_on_heartbeat", False)
+            )
+
+            if assessment.should_decompose or force_decompose:
+                # Clear the decompose flag so it doesn't re-trigger
+                updated_metadata = dict(task.metadata) if task.metadata else {}
+                updated_metadata["decompose_on_heartbeat"] = False
+                updated_metadata["active"] = False
+
                 await db.update_task(
                     task.id,
-                    TaskUpdate(status=TaskStatus.PENDING)
+                    TaskUpdate(
+                        status=TaskStatus.PENDING,
+                        metadata=updated_metadata,
+                    )
                 )
                 await event_bus.emit(
                     "task.needs_decomposition",

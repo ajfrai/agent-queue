@@ -12,6 +12,8 @@ class AgentHarness {
         this.setupEventSource();
         this.setupFormHandlers();
         this.setupFilterTabs();
+        this.setupModalHandlers();
+        this.setupFAB();
         this.loadTasks();
         this.loadSystemStatus();
     }
@@ -27,11 +29,9 @@ class AgentHarness {
 
         this.eventSource.onerror = (error) => {
             console.error('SSE connection error:', error);
-            // Reconnect after 5 seconds
             setTimeout(() => this.setupEventSource(), 5000);
         };
 
-        // Handle heartbeat ticks
         this.eventSource.addEventListener('heartbeat.tick', (event) => {
             const data = JSON.parse(event.data);
             this.updateHeartbeatStatus(data);
@@ -39,45 +39,40 @@ class AgentHarness {
     }
 
     handleEvent(event) {
-        console.log('Event received:', event.event_type, event.payload);
+        console.log('Event:', event.event_type);
 
-        // Handle different event types
         if (event.event_type.startsWith('task.')) {
-            this.loadTasks(); // Reload tasks on any task event
+            this.loadTasks();
         } else if (event.event_type.startsWith('session.')) {
             this.handleSessionEvent(event);
         } else if (event.event_type === 'heartbeat.tick') {
             this.updateHeartbeatStatus(event);
         }
 
-        // Update system status
         this.loadSystemStatus();
     }
 
     updateHeartbeatStatus(event) {
-        const heartbeatEl = document.getElementById('heartbeat-status');
-        heartbeatEl.textContent = '🟢';
-        heartbeatEl.title = 'Heartbeat active';
+        const indicator = document.getElementById('heartbeat-status');
+        indicator.classList.add('active');
 
-        // Update rate limit display
-        if (event.payload.rate_limit) {
+        if (event.payload && event.payload.rate_limit) {
             const rl = event.payload.rate_limit;
-            document.getElementById('rate-limit-status').textContent =
-                `${rl.messages_used}/${rl.messages_limit} (${rl.percent_used.toFixed(0)}%)`;
+            const el = document.getElementById('rate-limit-status');
+            el.textContent = `${rl.messages_used}/${rl.messages_limit} (${rl.percent_used.toFixed(0)}%)`;
 
             if (rl.is_limited) {
-                document.getElementById('rate-limit-status').style.color = '#f44336';
+                el.style.color = '#ef4444';
             } else if (rl.percent_used > 80) {
-                document.getElementById('rate-limit-status').style.color = '#ffa500';
+                el.style.color = '#f59e0b';
             } else {
-                document.getElementById('rate-limit-status').style.color = '#4caf50';
+                el.style.color = '#22c55e';
             }
         }
     }
 
     handleSessionEvent(event) {
         if (event.event_type === 'session.output') {
-            // Stream output to viewer if open
             const viewer = document.getElementById('session-viewer');
             if (!viewer.classList.contains('hidden')) {
                 const outputEl = document.getElementById('session-output');
@@ -95,10 +90,108 @@ class AgentHarness {
             await this.createTask();
         });
 
-        // Close session viewer
         document.getElementById('close-session').addEventListener('click', () => {
             document.getElementById('session-viewer').classList.add('hidden');
         });
+    }
+
+    setupModalHandlers() {
+        const backdrop = document.getElementById('modal-backdrop');
+        const taskModal = document.getElementById('task-modal');
+        const addTaskModal = document.getElementById('add-task-modal');
+        const closeModal = document.getElementById('close-modal');
+        const closeFormModal = document.getElementById('close-form-modal');
+        const cancelFormBtn = document.getElementById('cancel-task-form');
+
+        // Close task detail modal
+        closeModal.addEventListener('click', () => {
+            this.closeTaskModal();
+        });
+
+        // Close add task modal
+        closeFormModal.addEventListener('click', () => {
+            this.closeAddTaskModal();
+        });
+
+        cancelFormBtn.addEventListener('click', () => {
+            this.closeAddTaskModal();
+        });
+
+        // Close on backdrop click
+        backdrop.addEventListener('click', () => {
+            this.closeTaskModal();
+            this.closeAddTaskModal();
+        });
+    }
+
+    setupFAB() {
+        const fab = document.getElementById('fab-add-task');
+        fab.addEventListener('click', () => {
+            this.openAddTaskModal();
+        });
+    }
+
+    openTaskModal(task) {
+        const isActive = task.metadata && task.metadata.active === true;
+        const isDecompose = task.metadata && task.metadata.decompose_on_heartbeat === true;
+
+        document.getElementById('modal-title').textContent = task.title;
+        document.getElementById('modal-task-title').textContent = task.title;
+        document.getElementById('modal-task-description').textContent = task.description;
+        document.getElementById('modal-task-priority').textContent = `P${task.priority}`;
+        document.getElementById('modal-task-status').textContent = task.status;
+        document.getElementById('modal-task-complexity').textContent = task.complexity || '-';
+        document.getElementById('modal-task-created').textContent = new Date(task.created_at).toLocaleDateString();
+
+        // Render flags
+        const flagsContainer = document.getElementById('modal-flags');
+        if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+            flagsContainer.innerHTML = '';
+        } else {
+            flagsContainer.innerHTML = `
+                <span class="task-flag flag-active ${isActive ? 'is-set' : ''}"
+                      onclick="app.toggleActive(${task.id}, ${!isActive})">
+                    ${isActive ? 'Active' : 'Inactive'}
+                </span>
+                <span class="task-flag flag-decompose ${isDecompose ? 'is-set' : ''}"
+                      onclick="app.toggleDecompose(${task.id}, ${!isDecompose})">
+                    Decompose
+                </span>
+            `;
+        }
+
+        // Render actions
+        const actionsContainer = document.getElementById('modal-actions');
+        let actionsHTML = '';
+        if (task.status === 'executing' && task.active_session_id) {
+            actionsHTML += `<button class="btn-view" onclick="app.viewSession(${task.active_session_id})">View Output</button>`;
+        }
+        if (task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled') {
+            actionsHTML += `<button class="btn-cancel" onclick="app.cancelTask(${task.id})">Cancel Task</button>`;
+        }
+        actionsContainer.innerHTML = actionsHTML;
+
+        document.getElementById('task-modal').classList.remove('hidden');
+        document.getElementById('modal-backdrop').classList.remove('hidden');
+    }
+
+    closeTaskModal() {
+        document.getElementById('task-modal').classList.add('hidden');
+        document.getElementById('modal-backdrop').classList.add('hidden');
+    }
+
+    openAddTaskModal() {
+        document.getElementById('add-task-modal').classList.remove('hidden');
+        document.getElementById('modal-backdrop').classList.remove('hidden');
+        document.getElementById('task-title').focus();
+    }
+
+    closeAddTaskModal() {
+        document.getElementById('add-task-modal').classList.add('hidden');
+        document.getElementById('modal-backdrop').classList.add('hidden');
+        document.getElementById('task-title').value = '';
+        document.getElementById('task-description').value = '';
+        document.getElementById('task-priority').value = '0';
     }
 
     async createTask() {
@@ -114,12 +207,7 @@ class AgentHarness {
             });
 
             if (response.ok) {
-                // Clear form
-                document.getElementById('task-title').value = '';
-                document.getElementById('task-description').value = '';
-                document.getElementById('task-priority').value = '0';
-
-                // Reload tasks
+                this.closeAddTaskModal();
                 await this.loadTasks();
             } else {
                 alert('Failed to create task');
@@ -146,60 +234,89 @@ class AgentHarness {
     renderTasks() {
         const taskList = document.getElementById('task-list');
 
-        // Filter tasks
         let filteredTasks = this.tasks;
         if (this.currentFilter !== 'all') {
             filteredTasks = this.tasks.filter(t => t.status === this.currentFilter);
         }
 
-        // Sort by position
         filteredTasks.sort((a, b) => a.position - b.position);
 
-        // Render
         taskList.innerHTML = '';
+
+        if (filteredTasks.length === 0) {
+            taskList.innerHTML = '<div class="empty-state">No tasks</div>';
+            return;
+        }
+
         filteredTasks.forEach(task => {
             const taskEl = this.createTaskElement(task);
             taskList.appendChild(taskEl);
         });
 
-        // Setup drag and drop
         this.setupDragAndDrop();
     }
 
     createTaskElement(task) {
         const div = document.createElement('div');
+        const isActive = task.metadata && task.metadata.active === true;
+        const isDecompose = task.metadata && task.metadata.decompose_on_heartbeat === true;
+
         div.className = `task-item ${task.status}`;
+        if (isActive) {
+            div.classList.add('active-task');
+        } else {
+            div.classList.add('inactive');
+        }
         div.draggable = true;
         div.dataset.taskId = task.id;
 
-        // Status emoji
-        const statusEmoji = {
-            pending: '⏱',
-            assessing: '🔍',
-            executing: '🟢',
-            completed: '✓',
-            failed: '❌',
-            cancelled: '⏸',
-        };
+        // Tap to open detail modal
+        div.addEventListener('click', (e) => {
+            // Don't open modal if clicking a button or flag
+            if (e.target.closest('button') || e.target.closest('.task-flag')) {
+                return;
+            }
+            this.openTaskModal(task);
+        });
 
-        // Format timestamp
-        const createdAt = new Date(task.created_at).toLocaleString();
+        const createdAt = new Date(task.created_at).toLocaleDateString();
 
         div.innerHTML = `
             <div class="task-header">
-                <div class="task-title">${statusEmoji[task.status]} ${this.escapeHtml(task.title)}</div>
-                <div class="task-status">${task.status}</div>
+                <div class="task-title">${this.escapeHtml(task.title)}</div>
+                <div class="task-status status-${task.status}">${task.status}</div>
             </div>
-            <div class="task-description">${this.escapeHtml(task.description).substring(0, 150)}...</div>
+            <div class="task-description">${this.escapeHtml(task.description)}</div>
             <div class="task-meta">
-                <span>Priority: ${task.priority}</span>
-                ${task.complexity ? `<span>Complexity: ${task.complexity}</span>` : ''}
-                <span>Created: ${createdAt}</span>
+                <span>P${task.priority}</span>
+                ${task.complexity ? `<span>${task.complexity}</span>` : ''}
+                <span>${createdAt}</span>
             </div>
+            ${this.renderTaskFlags(task, isActive, isDecompose)}
             ${this.renderTaskActions(task)}
         `;
 
         return div;
+    }
+
+    renderTaskFlags(task, isActive, isDecompose) {
+        // Only show flags for actionable tasks
+        if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+            return '';
+        }
+
+        return `
+            <div class="task-flags">
+                <span class="task-flag flag-active ${isActive ? 'is-set' : ''}"
+                      onclick="event.stopPropagation(); app.toggleActive(${task.id}, ${!isActive})">
+                    ${isActive ? 'Active' : 'Inactive'}
+                </span>
+                <span class="task-flag flag-decompose ${isDecompose ? 'is-set' : ''}"
+                      onclick="event.stopPropagation(); app.toggleDecompose(${task.id}, ${!isDecompose})">
+                    ${isDecompose ? 'Decompose' : 'Decompose'}
+                </span>
+            </div>
+        `;
     }
 
     renderTaskActions(task) {
@@ -210,17 +327,61 @@ class AgentHarness {
         let html = '<div class="task-actions">';
 
         if (task.status === 'executing' && task.active_session_id) {
-            html += `<button class="btn-view" onclick="app.viewSession(${task.active_session_id})">View Output</button>`;
+            html += `<button class="btn-view" onclick="event.stopPropagation(); app.viewSession(${task.active_session_id})">Output</button>`;
         }
 
-        html += `<button class="btn-cancel" onclick="app.cancelTask(${task.id})">Cancel</button>`;
+        html += `<button class="btn-cancel" onclick="event.stopPropagation(); app.cancelTask(${task.id})">Cancel</button>`;
         html += '</div>';
 
         return html;
     }
 
+    // Toggle active state
+    async toggleActive(taskId, active) {
+        try {
+            const task = this.tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            const metadata = { ...(task.metadata || {}), active: active };
+
+            const response = await fetch(`/api/tasks/${taskId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ metadata }),
+            });
+
+            if (response.ok) {
+                await this.loadTasks();
+            }
+        } catch (error) {
+            console.error('Error toggling active:', error);
+        }
+    }
+
+    // Toggle decompose flag
+    async toggleDecompose(taskId, decompose) {
+        try {
+            const task = this.tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            const metadata = { ...(task.metadata || {}), decompose_on_heartbeat: decompose };
+
+            const response = await fetch(`/api/tasks/${taskId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ metadata }),
+            });
+
+            if (response.ok) {
+                await this.loadTasks();
+            }
+        } catch (error) {
+            console.error('Error toggling decompose:', error);
+        }
+    }
+
     async cancelTask(taskId) {
-        if (!confirm('Are you sure you want to cancel this task?')) {
+        if (!confirm('Cancel this task?')) {
             return;
         }
 
@@ -245,7 +406,7 @@ class AgentHarness {
         const outputEl = document.getElementById('session-output');
 
         viewer.classList.remove('hidden');
-        outputEl.textContent = 'Loading session output...\n';
+        outputEl.textContent = 'Loading...\n';
 
         try {
             const response = await fetch(`/api/sessions/${sessionId}/output`);
@@ -264,7 +425,7 @@ class AgentHarness {
                     outputEl.scrollTop = outputEl.scrollHeight;
                 }
             } else {
-                outputEl.textContent = 'Failed to load session output';
+                outputEl.textContent = 'Failed to load output';
             }
         } catch (error) {
             console.error('Error loading session output:', error);
@@ -319,13 +480,11 @@ class AgentHarness {
     }
 
     async reorderTasks(draggedId, targetId) {
-        // Find positions
         const draggedTask = this.tasks.find(t => t.id == draggedId);
         const targetTask = this.tasks.find(t => t.id == targetId);
 
         if (!draggedTask || !targetTask) return;
 
-        // Swap positions
         const newPositions = [];
         this.tasks.forEach(task => {
             if (task.id == draggedId) {

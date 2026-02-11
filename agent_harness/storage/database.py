@@ -142,11 +142,17 @@ class Database:
             return True
 
     async def get_next_pending_task(self) -> Optional[Task]:
-        """Get the next pending task by position."""
+        """Get the next active pending task by position.
+
+        Only returns tasks where metadata.active is true, meaning the user
+        has explicitly activated them for processing on the next heartbeat.
+        """
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
-                "SELECT * FROM tasks WHERE status = 'pending' ORDER BY position, priority DESC LIMIT 1"
+                "SELECT * FROM tasks WHERE status = 'pending' "
+                "AND json_extract(metadata, '$.active') = 1 "
+                "ORDER BY position, priority DESC LIMIT 1"
             )
             row = await cursor.fetchone()
             return self._row_to_task(row) if row else None
