@@ -1,4 +1,4 @@
--- Initial database schema for agent harness
+-- Initial database schema for agent queue
 
 -- Tasks table
 CREATE TABLE IF NOT EXISTS tasks (

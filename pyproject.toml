@@ -1,13 +1,12 @@
 [project]
-name = "agent-harness"
+name = "agent-queue"
 version = "0.1.0"
-description = "Add your description here"
+description = "Autonomous task queue for Claude Code CLI"
 requires-python = ">=3.11"
 dependencies = [
     "aiosqlite>=0.22.1",
     "anthropic>=0.79.0",
     "fastapi>=0.128.7",
-    "pexpect>=4.9.0",
-    "sse-starlette>=3.2.0",
+"sse-starlette>=3.2.0",
     "uvicorn>=0.40.0",
 ]

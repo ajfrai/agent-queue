@@ -1,4 +1,4 @@
-"""Database operations for the agent harness."""
+"""Database operations for the agent queue."""
 
 import aiosqlite
 import json

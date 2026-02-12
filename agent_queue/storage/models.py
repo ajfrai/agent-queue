@@ -1,4 +1,4 @@
-"""Pydantic models for the agent harness."""
+"""Pydantic models for the agent queue."""
 
 from datetime import datetime
 from typing import Optional, Dict, Any, List

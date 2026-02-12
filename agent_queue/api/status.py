@@ -5,7 +5,6 @@ from datetime import datetime
 
 from ..storage.models import SystemStatus, RateLimitStatus, TaskStatus, SessionStatus
 from ..storage.database import db
-from ..core.rate_limit_monitor import rate_limit_monitor
 from ..core.heartbeat import heartbeat_manager
 
 router = APIRouter(prefix="/api", tags=["status"])
@@ -13,8 +12,14 @@ router = APIRouter(prefix="/api", tags=["status"])
 
 @router.get("/status", response_model=SystemStatus)
 async def get_system_status():
-    """Get overall system status."""
-    rate_limit = await rate_limit_monitor.get_rate_limit_status()
+    """Get overall system status using cached data (no blocking probes)."""
+    # Use the heartbeat's cached rate status instead of triggering a new probe
+    rate_limit = heartbeat_manager.last_rate_status
+    if rate_limit is None:
+        # Try database cache
+        rate_limit = await db.get_rate_limit_status()
+    if rate_limit is None:
+        rate_limit = RateLimitStatus()
 
     all_tasks = await db.list_tasks()
     active_tasks = sum(1 for t in all_tasks if t.status in [TaskStatus.ASSESSING, TaskStatus.EXECUTING])

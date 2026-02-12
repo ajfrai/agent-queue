@@ -1,4 +1,4 @@
-"""FastAPI server for the agent harness."""
+"""FastAPI server for the agent queue."""
 
 import logging
 from contextlib import asynccontextmanager
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
-    logger.info("Starting agent harness...")
+    logger.info("Starting agent queue...")
 
     # Initialize database
     config.ensure_directories()
@@ -44,14 +44,14 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("Shutting down agent harness...")
+    logger.info("Shutting down agent queue...")
     await heartbeat_manager.stop()
     logger.info("Heartbeat stopped")
 
 
 # Create FastAPI app
 app = FastAPI(
-    title="Agent Harness",
+    title="Agent Queue",
     description="Autonomous task queue management for Claude Code CLI",
     version="0.1.0",
     lifespan=lifespan,
@@ -86,7 +86,7 @@ else:
     async def root():
         """Root endpoint."""
         return {
-            "name": "Agent Harness",
+            "name": "Agent Queue",
             "version": "0.1.0",
             "status": "running",
         }
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "agent_harness.server:app",
+        "agent_queue.server:app",
         host=config.HOST,
         port=config.PORT,
         reload=True,

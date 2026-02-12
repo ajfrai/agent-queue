@@ -1,5 +1,5 @@
 def main():
-    print("Hello from agent-harness!")
+    print("Hello from agent-queue!")
 
 
 if __name__ == "__main__":

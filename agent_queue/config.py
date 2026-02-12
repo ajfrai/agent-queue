@@ -1,4 +1,4 @@
-"""Configuration management for the agent harness."""
+"""Configuration management for the agent queue."""
 
 from pathlib import Path
 import os
@@ -10,7 +10,7 @@ class Config:
     # Paths
     BASE_DIR = Path(__file__).parent.parent
     DATA_DIR = BASE_DIR / "data"
-    DB_PATH = DATA_DIR / "harness.db"
+    DB_PATH = DATA_DIR / "queue.db"
     SESSIONS_DIR = DATA_DIR / "sessions"
 
     # Server settings

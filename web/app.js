@@ -1,6 +1,6 @@
-// Agent Harness Web UI
+// Agent Queue Web UI
 
-class AgentHarness {
+class AgentQueue {
     constructor() {
         this.tasks = [];
         this.currentFilter = 'all';
@@ -54,20 +54,29 @@ class AgentHarness {
 
     updateHeartbeatStatus(event) {
         const indicator = document.getElementById('heartbeat-status');
+        if (!indicator) return;
         indicator.classList.add('active');
 
-        if (event.payload && event.payload.rate_limit) {
-            const rl = event.payload.rate_limit;
-            const el = document.getElementById('rate-limit-status');
-            el.textContent = `${rl.messages_used}/${rl.messages_limit} (${rl.percent_used.toFixed(0)}%)`;
+        // Remove pulse after a moment
+        setTimeout(() => indicator.classList.remove('active'), 2000);
 
+        const payload = event && event.payload ? event.payload : (event || {});
+        const rl = payload.rate_limit;
+        const el = document.getElementById('rate-limit-status');
+        if (!el) return;
+
+        if (rl) {
             if (rl.is_limited) {
+                const resetAt = rl.reset_at ? new Date(rl.reset_at).toLocaleTimeString() : '?';
+                el.textContent = `Limited (resets ${resetAt})`;
                 el.style.color = '#ef4444';
-            } else if (rl.percent_used > 80) {
-                el.style.color = '#f59e0b';
             } else {
+                el.textContent = 'Available';
                 el.style.color = '#22c55e';
             }
+        } else if (payload.error) {
+            el.textContent = 'Check failed';
+            el.style.color = '#f59e0b';
         }
     }
 
@@ -547,4 +556,4 @@ class AgentHarness {
 }
 
 // Initialize app
-const app = new AgentHarness();
+const app = new AgentQueue();
