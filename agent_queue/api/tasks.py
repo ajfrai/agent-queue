@@ -1,9 +1,11 @@
 """Task management API endpoints."""
 
+from datetime import datetime
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from typing import List, Optional
 
-from ..storage.models import Task, TaskCreate, TaskUpdate, Comment, CommentCreate
+from ..storage.models import Task, TaskCreate, TaskUpdate, TaskStatus, Comment, CommentCreate, Event
 from ..storage.database import db
 from ..core.event_bus import event_bus
 from ..core.task_scheduler import task_scheduler
@@ -66,6 +68,54 @@ async def update_task(task_id: int, update: TaskUpdate):
     return task
 
 
+class StatusChangeRequest(BaseModel):
+    status: str
+
+
+VALID_STATUSES = {
+    TaskStatus.PENDING, TaskStatus.EXECUTING, TaskStatus.DECOMPOSED,
+    TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED,
+}
+
+
+@router.post("/{task_id}/status", response_model=Task)
+async def change_task_status(task_id: int, body: StatusChangeRequest):
+    """Manually change a task's status with proper side effects."""
+    task = await db.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    new_status = body.status
+    if new_status not in VALID_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {new_status}")
+
+    update_fields: dict = {"status": new_status}
+
+    # Set completed_at for terminal states
+    if new_status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
+        update_fields["completed_at"] = datetime.utcnow()
+
+    # Clear completed_at if moving back to non-terminal
+    if new_status in (TaskStatus.PENDING, TaskStatus.EXECUTING):
+        update_fields["completed_at"] = None
+
+    updated = await db.update_task(task_id, TaskUpdate(**update_fields))
+
+    await event_bus.emit(
+        f"task.{new_status}",
+        {"task_id": task_id, "manual": True, "previous_status": task.status},
+        entity_type="task",
+        entity_id=task.uuid,
+    )
+
+    # Check parent auto-completion when marking a subtask terminal
+    if new_status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
+        if task.parent_task_id:
+            await task_scheduler._check_parent_completion(task.parent_task_id)
+
+    return updated
+
+
 @router.delete("/{task_id}")
 async def cancel_task(task_id: int):
     """Cancel a task."""
@@ -90,6 +140,26 @@ async def reorder_tasks(task_positions: List[dict]):
     )
 
     return {"status": "reordered"}
+
+
+@router.get("/{task_id}/subtasks", response_model=List[Task])
+async def list_subtasks(task_id: int):
+    """List subtasks for a parent task."""
+    task = await db.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    subtasks = await db.get_subtasks(task_id)
+    return subtasks
+
+
+@router.get("/{task_id}/events", response_model=List[Event])
+async def list_task_events(task_id: int):
+    """List events for a task."""
+    task = await db.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    events = await db.list_events(entity_id=task.uuid)
+    return events
 
 
 @router.get("/{task_id}/comments", response_model=List[Comment])

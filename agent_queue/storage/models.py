@@ -9,6 +9,7 @@ class TaskStatus:
     PENDING = "pending"
     ASSESSING = "assessing"
     EXECUTING = "executing"
+    DECOMPOSED = "decomposed"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"

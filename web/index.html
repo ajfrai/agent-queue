@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <title>Agent Queue</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=11">
 </head>
 <body>
     <div class="container">
@@ -21,6 +21,7 @@
                 <div class="status-item">
                     <span class="status-label">Heartbeat:</span>
                     <span id="heartbeat-status" class="status-indicator"></span>
+                    <span id="heartbeat-count" class="status-value">0</span>
                 </div>
                 <div class="status-item">
                     <span class="status-label">Active:</span>
@@ -35,6 +36,12 @@
 
         <!-- Main content -->
         <div class="main-content">
+            <!-- Large task queue (decomposed parents) -->
+            <div class="task-queue large-task-queue hidden" id="large-task-section">
+                <h2>Large Tasks</h2>
+                <div id="large-task-list" class="task-list"></div>
+            </div>
+
             <!-- Task queue -->
             <div class="task-queue">
                 <h2>Tasks</h2>
@@ -64,7 +71,19 @@
     </div>
 
     <!-- Floating Action Button -->
-    <button id="fab-add-task" class="fab">+</button>
+    <div id="fab-container" class="fab-container">
+        <div id="fab-menu" class="fab-menu">
+            <button class="fab-action" id="fab-heartbeat" title="Trigger heartbeat">
+                <span class="fab-action-icon">&#x2764;</span>
+                <span class="fab-action-label">Heartbeat</span>
+            </button>
+            <button class="fab-action" id="fab-add" title="New task">
+                <span class="fab-action-icon">&#x2795;</span>
+                <span class="fab-action-label">New Task</span>
+            </button>
+        </div>
+        <button id="fab-toggle" class="fab">+</button>
+    </div>
 
     <!-- Task Detail Modal -->
     <div id="task-modal" class="modal hidden">
@@ -101,11 +120,19 @@
                     </div>
                 </div>
                 <div class="modal-section">
+                    <label>Status</label>
+                    <div id="modal-status-change" class="modal-status-change"></div>
+                </div>
+                <div class="modal-section">
                     <label>Controls</label>
                     <div id="modal-flags" class="modal-flags"></div>
                 </div>
                 <div class="modal-section">
                     <div id="modal-actions" class="modal-actions"></div>
+                </div>
+                <div class="modal-section">
+                    <label>Event Log</label>
+                    <div id="modal-events" class="modal-events"></div>
                 </div>
             </div>
         </div>
@@ -151,6 +178,6 @@
     <!-- Modal backdrop -->
     <div id="modal-backdrop" class="modal-backdrop hidden"></div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=15"></script>
 </body>
 </html>

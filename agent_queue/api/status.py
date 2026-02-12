@@ -46,3 +46,10 @@ async def health_check():
         "timestamp": datetime.utcnow().isoformat(),
         "heartbeat_active": heartbeat_manager.is_running(),
     }
+
+
+@router.post("/heartbeat/trigger")
+async def trigger_heartbeat():
+    """Manually trigger a single heartbeat cycle."""
+    diag = await heartbeat_manager.trigger()
+    return diag

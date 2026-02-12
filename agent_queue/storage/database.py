@@ -104,14 +104,27 @@ class Database:
         return await self.list_tasks(parent_task_id=parent_id)
 
     async def update_task(self, task_id: int, update: TaskUpdate) -> Optional[Task]:
-        """Update a task."""
+        """Update a task. Metadata is merged, not replaced."""
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
 
             updates = []
             values = []
 
-            for field, value in update.model_dump(exclude_unset=True).items():
+            dump = update.model_dump(exclude_unset=True)
+
+            # Merge metadata with existing instead of replacing
+            if "metadata" in dump and dump["metadata"] is not None:
+                cursor = await conn.execute(
+                    "SELECT metadata FROM tasks WHERE id = ?", (task_id,)
+                )
+                row = await cursor.fetchone()
+                if row:
+                    existing = json.loads(row["metadata"]) if row["metadata"] else {}
+                    existing.update(dump["metadata"])
+                    dump["metadata"] = existing
+
+            for field, value in dump.items():
                 if field == "metadata":
                     updates.append(f"{field} = ?")
                     values.append(json.dumps(value))
@@ -152,6 +165,33 @@ class Database:
             cursor = await conn.execute(
                 "SELECT * FROM tasks WHERE status = 'pending' "
                 "AND json_extract(metadata, '$.active') = 1 "
+                "ORDER BY position, priority DESC LIMIT 1"
+            )
+            row = await cursor.fetchone()
+            return self._row_to_task(row) if row else None
+
+    async def get_active_unassessed_tasks(self, limit: int = 10) -> List[Task]:
+        """Get active pending tasks that haven't been assessed yet."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute(
+                "SELECT * FROM tasks WHERE status = 'pending' "
+                "AND json_extract(metadata, '$.active') = 1 "
+                "AND complexity IS NULL "
+                "ORDER BY position, priority DESC LIMIT ?",
+                (limit,)
+            )
+            rows = await cursor.fetchall()
+            return [self._row_to_task(row) for row in rows]
+
+    async def get_next_assessed_task(self) -> Optional[Task]:
+        """Get the next active pending task that has been assessed."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute(
+                "SELECT * FROM tasks WHERE status = 'pending' "
+                "AND json_extract(metadata, '$.active') = 1 "
+                "AND complexity IS NOT NULL "
                 "ORDER BY position, priority DESC LIMIT 1"
             )
             row = await cursor.fetchone()

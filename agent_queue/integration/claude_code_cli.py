@@ -60,6 +60,7 @@ class ClaudeCodeCLI:
         cmd = [
             self.claude_bin,
             "-p",
+            "--verbose",
             "--output-format", "stream-json",
             "--dangerously-skip-permissions",
         ]
