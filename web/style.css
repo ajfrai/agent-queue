@@ -288,6 +288,10 @@ button:active {
     border-left-color: #9ca3af;
 }
 
+.task-item.ready_for_review {
+    border-left-color: #f59e0b;
+}
+
 /* Active overrides status border to show active ring */
 .task-item.active-task {
     border-left-width: 3px;
@@ -355,6 +359,11 @@ button:active {
 .task-status.status-cancelled {
     background: #f3f4f6;
     color: #6b7280;
+}
+
+.task-status.status-ready_for_review {
+    background: #fef3c7;
+    color: #b45309;
 }
 
 .task-description {
@@ -448,6 +457,22 @@ button:active {
 
 .btn-view:hover {
     background: #2563eb;
+}
+
+.btn-approve {
+    background: #22c55e;
+}
+
+.btn-approve:hover {
+    background: #16a34a;
+}
+
+.btn-request-changes {
+    background: #f59e0b;
+}
+
+.btn-request-changes:hover {
+    background: #d97706;
 }
 
 /* Session viewer */
@@ -796,6 +821,7 @@ button:active {
 .event-completed { background: #d1fae5; color: #065f46; }
 .event-failed { background: #fee2e2; color: #991b1b; }
 .event-cancelled { background: #f3f4f6; color: #6b7280; }
+.event-ready_for_review { background: #fef3c7; color: #b45309; }
 .event-requeued { background: #fef3c7; color: #92400e; }
 .event-updated { background: #f3f4f6; color: #374151; }
 
@@ -1348,4 +1374,135 @@ button:active {
     font-size: 10px;
     padding: 1px 6px;
     flex-shrink: 0;
+}
+
+/* Project name in header */
+.project-name {
+    font-size: 14px;
+    font-weight: 400;
+    color: #6b7280;
+}
+
+/* Comment section in modal */
+.modal-comments {
+    max-height: 250px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px;
+    background: #f9fafb;
+    margin-bottom: 8px;
+}
+
+.comment-item {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+}
+
+.comment-item:last-child {
+    margin-bottom: 0;
+}
+
+.comment-item.comment-system {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+}
+
+.comment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.comment-author {
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.comment-system .comment-author {
+    color: #2563eb;
+}
+
+.comment-time {
+    font-size: 11px;
+    color: #9ca3af;
+}
+
+.comment-body {
+    font-size: 13px;
+    color: #1a1a1a;
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+.comment-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.comment-input-row input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    background: #fff;
+    color: #111;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.comment-input-row input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.btn-comment-submit {
+    padding: 8px 16px;
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    min-height: 38px;
+    white-space: nowrap;
+}
+
+.btn-comment-submit:hover {
+    background: #1d4ed8;
+}
+
+.btn-comment-submit:active {
+    background: #1e40af;
+}
+
+/* Comment preview on task cards */
+.task-comment-preview {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 4px;
+    margin-bottom: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 3px 6px;
+    background: #f3f4f6;
+    border-radius: 4px;
+    border-left: 2px solid #d1d5db;
+}
+
+.task-comment-preview .comment-author {
+    font-size: 11px;
+    font-weight: 600;
+    color: #374151;
 }

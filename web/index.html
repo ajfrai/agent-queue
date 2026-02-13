@@ -6,13 +6,13 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <title>Agent Queue</title>
-    <link rel="stylesheet" href="/static/style.css?v=11">
+    <link rel="stylesheet" href="/static/style.css?v=12">
 </head>
 <body>
     <div class="container">
         <!-- Header -->
         <header class="header">
-            <h1>Agent Queue</h1>
+            <h1>Agent Queue <span id="project-name" class="project-name"></span></h1>
             <div class="status-bar">
                 <div class="status-item">
                     <span class="status-label">Rate:</span>
@@ -49,6 +49,7 @@
                     <button class="filter-tab active" data-filter="all">All</button>
                     <button class="filter-tab" data-filter="pending">Pending</button>
                     <button class="filter-tab" data-filter="executing">Running</button>
+                    <button class="filter-tab" data-filter="ready_for_review">Review</button>
                     <button class="filter-tab" data-filter="completed">Done</button>
                     <button class="filter-tab" data-filter="failed">Failed</button>
                 </div>
@@ -128,6 +129,14 @@
                     <div id="modal-flags" class="modal-flags"></div>
                 </div>
                 <div class="modal-section">
+                    <label>Comments</label>
+                    <div id="modal-comments" class="modal-comments"></div>
+                    <div class="comment-input-row">
+                        <input type="text" id="comment-input" placeholder="Add a comment..." autocomplete="off" />
+                        <button id="comment-submit" class="btn-comment-submit">Send</button>
+                    </div>
+                </div>
+                <div class="modal-section">
                     <div id="modal-actions" class="modal-actions"></div>
                 </div>
                 <div class="modal-section">
@@ -178,6 +187,6 @@
     <!-- Modal backdrop -->
     <div id="modal-backdrop" class="modal-backdrop hidden"></div>
 
-    <script src="/static/app.js?v=15"></script>
+    <script src="/static/app.js?v=17"></script>
 </body>
 </html>

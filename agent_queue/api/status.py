@@ -5,6 +5,7 @@ from datetime import datetime
 
 from ..storage.models import SystemStatus, RateLimitStatus, TaskStatus, SessionStatus
 from ..storage.database import db
+from ..config import config
 from ..core.heartbeat import heartbeat_manager
 
 router = APIRouter(prefix="/api", tags=["status"])
@@ -46,6 +47,16 @@ async def health_check():
         "timestamp": datetime.utcnow().isoformat(),
         "heartbeat_active": heartbeat_manager.is_running(),
     }
+
+
+@router.get("/project")
+async def get_active_project():
+    """Get the active project info (if any)."""
+    if config.PROJECT_ID:
+        project = await db.get_project(config.PROJECT_ID)
+        if project:
+            return {"active": True, "name": project.name, "id": project.id, "git_repo": project.git_repo}
+    return {"active": False, "name": None, "id": None, "git_repo": None}
 
 
 @router.post("/heartbeat/trigger")

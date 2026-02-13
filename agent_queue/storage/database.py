@@ -14,6 +14,7 @@ from .models import (
     Comment, CommentCreate,
     Event, EventCreate,
     RateLimitStatus,
+    Project, ProjectCreate, ProjectUpdate,
 )
 
 
@@ -24,17 +25,30 @@ class Database:
         self.db_path = db_path or config.DB_PATH
 
     async def init_db(self):
-        """Initialize the database with the schema."""
+        """Initialize the database by running all migration files in order."""
         config.ensure_directories()
 
         migrations_dir = Path(__file__).parent / "migrations"
-        schema_file = migrations_dir / "001_initial.sql"
+        migration_files = sorted(migrations_dir.glob("*.sql"))
 
         async with aiosqlite.connect(self.db_path) as conn:
-            with open(schema_file, "r") as f:
-                schema = f.read()
-            await conn.executescript(schema)
+            for mf in migration_files:
+                with open(mf, "r") as f:
+                    schema = f.read()
+                await conn.executescript(schema)
             await conn.commit()
+
+            # Add columns that may not exist yet (ALTER TABLE doesn't
+            # support IF NOT EXISTS in SQLite — catch duplicates)
+            for stmt in [
+                "ALTER TABLE tasks ADD COLUMN project_id INTEGER REFERENCES projects(id)",
+                "ALTER TABLE projects ADD COLUMN git_repo TEXT DEFAULT ''",
+            ]:
+                try:
+                    await conn.execute(stmt)
+                    await conn.commit()
+                except Exception:
+                    pass  # Column already exists
 
     # Task operations
     async def create_task(self, task: TaskCreate) -> Task:
@@ -52,11 +66,11 @@ class Database:
 
             await conn.execute(
                 """
-                INSERT INTO tasks (uuid, title, description, priority, position, parent_task_id, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tasks (uuid, title, description, priority, position, parent_task_id, project_id, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (task_uuid, task.title, task.description, task.priority,
-                 next_position, task.parent_task_id, metadata_json),
+                 next_position, task.parent_task_id, task.project_id, metadata_json),
             )
             await conn.commit()
 
@@ -74,7 +88,7 @@ class Database:
 
     async def list_tasks(
         self, status: Optional[str] = None, parent_task_id: Optional[int] = None,
-        limit: int = 100, offset: int = 0
+        project_id: Optional[int] = None, limit: int = 100, offset: int = 0
     ) -> List[Task]:
         """List tasks with optional filtering."""
         async with aiosqlite.connect(self.db_path) as conn:
@@ -90,6 +104,10 @@ class Database:
             if parent_task_id is not None:
                 conditions.append("parent_task_id = ?")
                 params.append(parent_task_id)
+
+            if project_id is not None:
+                conditions.append("project_id = ?")
+                params.append(project_id)
 
             where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
             query = f"SELECT * FROM tasks {where} ORDER BY position, priority DESC LIMIT ? OFFSET ?"
@@ -170,30 +188,40 @@ class Database:
             row = await cursor.fetchone()
             return self._row_to_task(row) if row else None
 
-    async def get_active_unassessed_tasks(self, limit: int = 10) -> List[Task]:
+    async def get_active_unassessed_tasks(self, limit: int = 10, project_id: Optional[int] = None) -> List[Task]:
         """Get active pending tasks that haven't been assessed yet."""
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
-            cursor = await conn.execute(
+            query = (
                 "SELECT * FROM tasks WHERE status = 'pending' "
                 "AND json_extract(metadata, '$.active') = 1 "
                 "AND complexity IS NULL "
-                "ORDER BY position, priority DESC LIMIT ?",
-                (limit,)
             )
+            params = []
+            if project_id is not None:
+                query += "AND project_id = ? "
+                params.append(project_id)
+            query += "ORDER BY position, priority DESC LIMIT ?"
+            params.append(limit)
+            cursor = await conn.execute(query, params)
             rows = await cursor.fetchall()
             return [self._row_to_task(row) for row in rows]
 
-    async def get_next_assessed_task(self) -> Optional[Task]:
+    async def get_next_assessed_task(self, project_id: Optional[int] = None) -> Optional[Task]:
         """Get the next active pending task that has been assessed."""
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
-            cursor = await conn.execute(
+            query = (
                 "SELECT * FROM tasks WHERE status = 'pending' "
                 "AND json_extract(metadata, '$.active') = 1 "
                 "AND complexity IS NOT NULL "
-                "ORDER BY position, priority DESC LIMIT 1"
             )
+            params = []
+            if project_id is not None:
+                query += "AND project_id = ? "
+                params.append(project_id)
+            query += "ORDER BY position, priority DESC LIMIT 1"
+            cursor = await conn.execute(query, params)
             row = await cursor.fetchone()
             return self._row_to_task(row) if row else None
 
@@ -217,6 +245,7 @@ class Database:
             priority=row["priority"],
             position=row["position"],
             parent_task_id=row["parent_task_id"],
+            project_id=row["project_id"] if "project_id" in row.keys() else None,
             complexity=row["complexity"],
             recommended_model=row["recommended_model"],
             active_session_id=row["active_session_id"],
@@ -476,6 +505,101 @@ class Database:
                 ),
             )
             await conn.commit()
+
+    # Project operations
+    async def create_project(self, project: ProjectCreate) -> Project:
+        """Create a new project."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            project_uuid = str(uuid4())
+            await conn.execute(
+                "INSERT INTO projects (uuid, name, working_directory, git_repo, summary, file_map) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (project_uuid, project.name, project.working_directory,
+                 project.git_repo, project.summary, project.file_map),
+            )
+            await conn.commit()
+            cursor = await conn.execute("SELECT * FROM projects WHERE uuid = ?", (project_uuid,))
+            row = await cursor.fetchone()
+            return self._row_to_project(row)
+
+    async def get_project(self, project_id: int) -> Optional[Project]:
+        """Get a project by ID."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,))
+            row = await cursor.fetchone()
+            return self._row_to_project(row) if row else None
+
+    async def get_project_by_name(self, name: str) -> Optional[Project]:
+        """Get a project by name."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute("SELECT * FROM projects WHERE name = ?", (name,))
+            row = await cursor.fetchone()
+            return self._row_to_project(row) if row else None
+
+    async def list_projects(self) -> List[Project]:
+        """List all projects."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute("SELECT * FROM projects ORDER BY name")
+            rows = await cursor.fetchall()
+            return [self._row_to_project(row) for row in rows]
+
+    async def update_project(self, project_id: int, update: ProjectUpdate) -> Optional[Project]:
+        """Update a project."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            updates = []
+            values = []
+            for field, value in update.model_dump(exclude_unset=True).items():
+                updates.append(f"{field} = ?")
+                values.append(value)
+            if not updates:
+                return await self.get_project(project_id)
+            updates.append("updated_at = CURRENT_TIMESTAMP")
+            values.append(project_id)
+            query = f"UPDATE projects SET {', '.join(updates)} WHERE id = ?"
+            await conn.execute(query, values)
+            await conn.commit()
+            return await self.get_project(project_id)
+
+    def _row_to_project(self, row: aiosqlite.Row) -> Project:
+        """Convert a database row to a Project model."""
+        return Project(
+            id=row["id"],
+            uuid=row["uuid"],
+            name=row["name"],
+            working_directory=row["working_directory"],
+            git_repo=row["git_repo"] if "git_repo" in row.keys() else "",
+            summary=row["summary"] or "",
+            file_map=row["file_map"] or "",
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    # Batch comment queries
+    async def get_latest_comments(self, task_ids: List[int]) -> Dict[int, Comment]:
+        """Get the most recent comment per task for a batch of task IDs."""
+        if not task_ids:
+            return {}
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            placeholders = ",".join("?" for _ in task_ids)
+            cursor = await conn.execute(
+                f"""
+                SELECT c.* FROM comments c
+                INNER JOIN (
+                    SELECT task_id, MAX(id) as max_id
+                    FROM comments
+                    WHERE task_id IN ({placeholders})
+                    GROUP BY task_id
+                ) latest ON c.id = latest.max_id
+                """,
+                task_ids,
+            )
+            rows = await cursor.fetchall()
+            return {row["task_id"]: self._row_to_comment(row) for row in rows}
 
 
 # Global database instance

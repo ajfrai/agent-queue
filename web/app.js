@@ -6,6 +6,8 @@ class AgentQueue {
         this.currentFilter = 'all';
         this.eventSource = null;
         this.heartbeatCount = 0;
+        this.latestComments = {};
+        this.currentModalTaskId = null;
         this.init();
     }
 
@@ -17,6 +19,7 @@ class AgentQueue {
         this.setupFAB();
         this.loadTasks();
         this.loadSystemStatus();
+        this.loadProjectInfo();
     }
 
     // SSE Event Stream
@@ -44,6 +47,12 @@ class AgentQueue {
 
         if (event.event_type.startsWith('task.')) {
             this.loadTasks();
+        } else if (event.event_type.startsWith('comment.')) {
+            this.loadTasks();
+            // Reload comments in modal if open for this task
+            if (this.currentModalTaskId && event.payload && event.payload.task_id === this.currentModalTaskId) {
+                this.loadComments(this.currentModalTaskId);
+            }
         } else if (event.event_type.startsWith('session.')) {
             this.handleSessionEvent(event);
         } else if (event.event_type === 'heartbeat.tick') {
@@ -216,6 +225,7 @@ class AgentQueue {
     }
 
     openTaskModal(task) {
+        this.currentModalTaskId = task.id;
         const isActive = task.metadata && task.metadata.active === true;
         const isDecompose = task.metadata && task.metadata.decompose_on_heartbeat === true;
 
@@ -229,7 +239,7 @@ class AgentQueue {
 
         // Render flags
         const flagsContainer = document.getElementById('modal-flags');
-        if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled' || task.status === 'decomposed') {
+        if (['completed', 'failed', 'cancelled', 'decomposed', 'ready_for_review'].includes(task.status)) {
             flagsContainer.innerHTML = '';
         } else {
             flagsContainer.innerHTML = `
@@ -247,7 +257,7 @@ class AgentQueue {
         // Render status changer
         const statusContainer = document.getElementById('modal-status-change');
         if (statusContainer) {
-            const statuses = ['pending', 'executing', 'completed', 'failed', 'cancelled', 'decomposed'];
+            const statuses = ['pending', 'executing', 'ready_for_review', 'completed', 'failed', 'cancelled', 'decomposed'];
             statusContainer.innerHTML = `
                 <select id="modal-status-select" class="status-select">
                     ${statuses.map(s => `<option value="${s}" ${s === task.status ? 'selected' : ''}>${s}</option>`).join('')}
@@ -256,13 +266,39 @@ class AgentQueue {
             `;
         }
 
+        // Load comments
+        this.loadComments(task.id);
+
+        // Set up comment submit handlers
+        const commentInput = document.getElementById('comment-input');
+        const commentSubmit = document.getElementById('comment-submit');
+        commentInput.value = '';
+
+        // Remove old listeners by cloning
+        const newSubmit = commentSubmit.cloneNode(true);
+        commentSubmit.parentNode.replaceChild(newSubmit, commentSubmit);
+        newSubmit.addEventListener('click', () => this.submitComment(task.id));
+
+        const newInput = commentInput.cloneNode(true);
+        commentInput.parentNode.replaceChild(newInput, commentInput);
+        newInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.submitComment(task.id);
+            }
+        });
+
         // Render actions
         const actionsContainer = document.getElementById('modal-actions');
         let actionsHTML = '';
         if (task.active_session_id) {
             actionsHTML += `<button class="btn-view" onclick="app.viewSession(${task.active_session_id})">View Output</button>`;
         }
-        if (task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled' && task.status !== 'decomposed') {
+        if (task.status === 'ready_for_review') {
+            actionsHTML += `<button class="btn-approve" onclick="app.approveTask(${task.id})">Approve</button>`;
+            actionsHTML += `<button class="btn-request-changes" onclick="app.requestChanges(${task.id})">Request Changes</button>`;
+        }
+        if (!['completed', 'failed', 'cancelled', 'decomposed', 'ready_for_review'].includes(task.status)) {
             actionsHTML += `<button class="btn-cancel" onclick="app.cancelTask(${task.id})">Cancel Task</button>`;
         }
         actionsContainer.innerHTML = actionsHTML;
@@ -313,6 +349,7 @@ class AgentQueue {
     }
 
     closeTaskModal() {
+        this.currentModalTaskId = null;
         document.getElementById('task-modal').classList.add('hidden');
         document.getElementById('modal-backdrop').classList.add('hidden');
     }
@@ -361,6 +398,8 @@ class AgentQueue {
             const response = await fetch('/api/tasks');
             if (response.ok) {
                 this.tasks = await response.json();
+                // Fetch latest comments for all tasks
+                await this.loadLatestComments();
                 this.renderTasks();
             }
         } catch (error) {
@@ -398,7 +437,12 @@ class AgentQueue {
 
         // Render regular queue with filters
         let filteredTasks = regularTasks;
-        if (this.currentFilter !== 'all') {
+        if (this.currentFilter === 'all') {
+            // "All" shows actionable tasks — exclude terminal states
+            filteredTasks = regularTasks.filter(t =>
+                t.status !== 'completed' && t.status !== 'failed' && t.status !== 'cancelled'
+            );
+        } else {
             filteredTasks = regularTasks.filter(t => t.status === this.currentFilter);
         }
 
@@ -509,12 +553,18 @@ class AgentQueue {
 
         const createdAt = new Date(task.created_at).toLocaleDateString();
 
+        const commentPreview = this.latestComments[task.id];
+        const commentHtml = commentPreview
+            ? `<div class="task-comment-preview"><span class="comment-author">${this.escapeHtml(commentPreview.author)}:</span> ${this.escapeHtml(commentPreview.content)}</div>`
+            : '';
+
         div.innerHTML = `
             <div class="task-header">
                 <div class="task-title">${this.escapeHtml(task.title)}</div>
                 <div class="task-status status-${task.status}">${task.status}</div>
             </div>
             <div class="task-description">${this.escapeHtml(task.description)}</div>
+            ${commentHtml}
             <div class="task-meta">
                 <span>P${task.priority}</span>
                 ${task.complexity ? `<span>${task.complexity}</span>` : ''}
@@ -557,7 +607,7 @@ class AgentQueue {
 
     renderTaskFlags(task, isActive, isDecompose) {
         // Only show flags for actionable tasks
-        if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled' || task.status === 'decomposed') {
+        if (['completed', 'failed', 'cancelled', 'decomposed', 'ready_for_review'].includes(task.status)) {
             return '';
         }
 
@@ -585,8 +635,15 @@ class AgentQueue {
             hasActions = true;
         }
 
+        // Show review actions for ready_for_review tasks
+        if (task.status === 'ready_for_review') {
+            html += `<button class="btn-approve" onclick="event.stopPropagation(); app.approveTask(${task.id})">Approve</button>`;
+            html += `<button class="btn-request-changes" onclick="event.stopPropagation(); app.requestChanges(${task.id})">Changes</button>`;
+            hasActions = true;
+        }
+
         // Show cancel only for non-terminal tasks
-        if (task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled' && task.status !== 'decomposed') {
+        if (!['completed', 'failed', 'cancelled', 'decomposed', 'ready_for_review'].includes(task.status)) {
             html += `<button class="btn-cancel" onclick="event.stopPropagation(); app.cancelTask(${task.id})">Cancel</button>`;
             hasActions = true;
         }
@@ -662,6 +719,53 @@ class AgentQueue {
         } catch (error) {
             console.error('Error changing status:', error);
             this.showToast('Error changing status');
+        }
+    }
+
+    async approveTask(taskId) {
+        try {
+            const response = await fetch(`/api/tasks/${taskId}/status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'completed' }),
+            });
+
+            if (response.ok) {
+                this.closeTaskModal();
+                await this.loadTasks();
+                this.showToast('Task approved and marked completed');
+            } else {
+                const err = await response.json();
+                this.showToast(`Failed: ${err.detail || response.status}`);
+            }
+        } catch (error) {
+            console.error('Error approving task:', error);
+            this.showToast('Error approving task');
+        }
+    }
+
+    async requestChanges(taskId) {
+        const comment = prompt('What changes are needed?');
+        if (!comment) return;
+
+        try {
+            // Post the comment — the API auto-requeues ready_for_review tasks
+            const resp = await fetch(`/api/tasks/${taskId}/comments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: comment, author: 'user' }),
+            });
+
+            if (resp.ok) {
+                this.closeTaskModal();
+                await this.loadTasks();
+                this.showToast('Task sent back for rework');
+            } else {
+                this.showToast('Failed to request changes');
+            }
+        } catch (error) {
+            console.error('Error requesting changes:', error);
+            this.showToast('Error requesting changes');
         }
     }
 
@@ -941,6 +1045,89 @@ class AgentQueue {
             }
         } catch (error) {
             console.error('Error loading system status:', error);
+        }
+    }
+
+    // Comments
+    async loadComments(taskId) {
+        const container = document.getElementById('modal-comments');
+        container.innerHTML = '<span class="event-loading">Loading...</span>';
+        try {
+            const resp = await fetch(`/api/tasks/${taskId}/comments`);
+            if (!resp.ok) {
+                container.innerHTML = '<span class="event-loading">Failed to load comments</span>';
+                return;
+            }
+            const comments = await resp.json();
+            if (comments.length === 0) {
+                container.innerHTML = '<span class="event-loading">No comments yet</span>';
+                return;
+            }
+            container.innerHTML = comments.map(c => {
+                const time = new Date(c.created_at).toLocaleString();
+                const isSystem = c.author === 'system';
+                return `<div class="comment-item ${isSystem ? 'comment-system' : ''}">
+                    <div class="comment-header">
+                        <span class="comment-author">${this.escapeHtml(c.author)}</span>
+                        <span class="comment-time">${time}</span>
+                    </div>
+                    <div class="comment-body">${this.escapeHtml(c.content)}</div>
+                </div>`;
+            }).join('');
+            container.scrollTop = container.scrollHeight;
+        } catch (e) {
+            container.innerHTML = '<span class="event-loading">Error loading comments</span>';
+        }
+    }
+
+    async submitComment(taskId) {
+        const input = document.getElementById('comment-input');
+        const content = input.value.trim();
+        if (!content) return;
+
+        try {
+            const resp = await fetch(`/api/tasks/${taskId}/comments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content, author: 'user' }),
+            });
+            if (resp.ok) {
+                input.value = '';
+                await this.loadComments(taskId);
+                await this.loadTasks();
+            }
+        } catch (e) {
+            console.error('Error submitting comment:', e);
+        }
+    }
+
+    async loadLatestComments() {
+        if (this.tasks.length === 0) {
+            this.latestComments = {};
+            return;
+        }
+        try {
+            const ids = this.tasks.map(t => t.id).join(',');
+            const resp = await fetch(`/api/tasks/latest-comments?task_ids=${ids}`);
+            if (resp.ok) {
+                this.latestComments = await resp.json();
+            }
+        } catch (e) {
+            console.error('Error loading latest comments:', e);
+        }
+    }
+
+    async loadProjectInfo() {
+        try {
+            const resp = await fetch('/api/project');
+            if (!resp.ok) return;
+            const info = await resp.json();
+            const el = document.getElementById('project-name');
+            if (el && info.active) {
+                el.textContent = `/ ${info.name}`;
+            }
+        } catch (e) {
+            // Silently ignore — project info is optional
         }
     }
 

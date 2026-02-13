@@ -13,7 +13,7 @@ from .config import config
 from .storage.database import db
 from .storage.seed import seed_database
 from .core.heartbeat import heartbeat_manager
-from .api import tasks, sessions, status, events
+from .api import tasks, sessions, status, events, projects
 
 # Configure logging
 logging.basicConfig(
@@ -33,6 +33,22 @@ async def lifespan(app: FastAPI):
     config.ensure_directories()
     await db.init_db()
     logger.info("Database initialized")
+
+    # Load project if specified via CLI
+    if config.PROJECT_NAME:
+        project = await db.get_project_by_name(config.PROJECT_NAME)
+        if project:
+            config.PROJECT_ID = project.id
+            config.DEFAULT_WORKING_DIR = project.working_directory
+            parts = []
+            if project.summary:
+                parts.append(f"## Project: {project.name}\n{project.summary}")
+            if project.file_map:
+                parts.append(f"## File Map\n{project.file_map}")
+            config.PROJECT_CONTEXT = "\n\n".join(parts)
+            logger.info(f"Loaded project '{project.name}' (id={project.id})")
+        else:
+            logger.warning(f"Project '{config.PROJECT_NAME}' not found — running unscoped")
 
     # Seed default tasks
     await seed_database()
@@ -71,6 +87,7 @@ app.include_router(tasks.router)
 app.include_router(sessions.router)
 app.include_router(status.router)
 app.include_router(events.router)
+app.include_router(projects.router)
 
 # Serve static files (web UI)
 web_dir = Path(__file__).parent.parent / "web"

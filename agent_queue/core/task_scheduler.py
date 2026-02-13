@@ -325,10 +325,38 @@ class TaskScheduler:
                 TaskUpdate(active_session_id=session.id)
             )
 
+            # Build the session prompt with optional project context
+            prompt_parts = []
+            if config.PROJECT_CONTEXT:
+                prompt_parts.append(config.PROJECT_CONTEXT)
+                prompt_parts.append("---")
+            prompt_parts.append(task.title)
+            prompt_parts.append(task.description)
+
+            # Include comment history so Claude sees reviewer feedback
+            comments = await db.list_comments(task_id)
+            if comments:
+                prompt_parts.append("---\n## Comment history")
+                for c in comments:
+                    prompt_parts.append(f"[{c.author}]: {c.content}")
+                prompt_parts.append(
+                    "\nThis task was previously attempted. A reviewer sent it back. "
+                    "Address the feedback in the comments above, then continue."
+                )
+
+            prompt_parts.append(
+                "---\n"
+                "IMPORTANT: When you finish, end your response with a section titled "
+                "'## How to test' that explains step-by-step how to verify your changes work. "
+                "Include specific commands to run, URLs to visit, or steps to check. "
+                "A human will review before marking this task complete."
+            )
+            session_prompt = "\n\n".join(prompt_parts)
+
             # Start the session
             success = await session_manager.start_session(
                 session.id,
-                f"{task.title}\n\n{task.description}"
+                session_prompt
             )
 
             if not success:
@@ -356,7 +384,7 @@ class TaskScheduler:
                 return
 
             if session.status == SessionStatus.COMPLETED:
-                await self._mark_task_completed(task.id, session.exit_code)
+                await self._mark_task_ready_for_review(task.id, session.exit_code)
             elif session.status == SessionStatus.FAILED:
                 await self._mark_task_failed(task.id, f"Session failed with exit code {session.exit_code}")
             elif session.status == SessionStatus.CANCELLED:
@@ -374,8 +402,8 @@ class TaskScheduler:
         except Exception as e:
             logger.error(f"Failed to check executing task {task.id}: {e}")
 
-    async def _mark_task_completed(self, task_id: int, exit_code: int):
-        """Mark a task as completed."""
+    async def _mark_task_ready_for_review(self, task_id: int, exit_code: int):
+        """Mark a task as ready for review (not completed — user must approve)."""
         try:
             task = await db.get_task(task_id)
             if not task:
@@ -384,26 +412,118 @@ class TaskScheduler:
             await db.update_task(
                 task_id,
                 TaskUpdate(
-                    status=TaskStatus.COMPLETED,
-                    completed_at=datetime.utcnow(),
+                    status=TaskStatus.READY_FOR_REVIEW,
                 )
             )
 
             await event_bus.emit(
-                "task.completed",
+                "task.ready_for_review",
                 {"task_id": task_id, "exit_code": exit_code},
                 entity_type="task",
                 entity_id=task.uuid,
             )
 
-            logger.info(f"Task {task_id} completed successfully")
+            # Build a useful review comment from session output
+            review_comment = await self._build_review_comment(task, exit_code)
+
+            from ..storage.models import CommentCreate
+            await db.create_comment(CommentCreate(
+                task_id=task_id,
+                content=review_comment,
+                author="system",
+            ))
+
+            logger.info(f"Task {task_id} ready for review (exit code {exit_code})")
 
             # Check if parent should auto-complete
             if task.parent_task_id:
                 await self._check_parent_completion(task.parent_task_id)
 
         except Exception as e:
-            logger.error(f"Failed to mark task {task_id} as completed: {e}")
+            logger.error(f"Failed to mark task {task_id} as ready for review: {e}")
+
+    def _extract_text_from_jsonl(self, raw: str) -> str:
+        """Extract readable assistant text from a JSONL session log.
+
+        The stdout log contains one JSON object per line. Assistant text lives in
+        ``message.content[].text`` for type=assistant lines, and in ``.result``
+        for the final type=result line.
+        """
+        import json
+
+        chunks: list[str] = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                # Not JSON — include as-is (shouldn't happen, but safe)
+                chunks.append(line)
+                continue
+
+            msg_type = obj.get("type")
+            if msg_type == "result":
+                result_text = obj.get("result", "")
+                if result_text:
+                    chunks.append(result_text)
+            elif msg_type == "assistant":
+                content_list = (obj.get("message") or {}).get("content", [])
+                for block in content_list:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text", "")
+                        if text:
+                            chunks.append(text)
+
+        return "\n\n".join(chunks)
+
+    async def _build_review_comment(self, task: Task, exit_code: int) -> str:
+        """Extract testing instructions from session output, or summarize it."""
+        try:
+            if not task.active_session_id:
+                return f"Session finished (exit code {exit_code}). No session output available."
+
+            session = await db.get_session(task.active_session_id)
+            if not session or not session.stdout_path:
+                return f"Session finished (exit code {exit_code}). No session output available."
+
+            stdout_path = Path(session.stdout_path)
+            if not stdout_path.exists():
+                return f"Session finished (exit code {exit_code}). Session log not found."
+
+            # Parse JSONL to get readable assistant text
+            raw = stdout_path.read_text(errors="replace")
+            text = self._extract_text_from_jsonl(raw)
+
+            if not text.strip():
+                return f"Session finished (exit code {exit_code}). No readable output found."
+
+            # Look for "How to test" section (case-insensitive)
+            import re
+            match = re.search(
+                r'(?:^|\n)#{1,3}\s*[Hh]ow\s+to\s+[Tt]est.*?\n(.*)',
+                text, re.DOTALL
+            )
+            if match:
+                instructions = match.group(0).strip()
+                if len(instructions) > 1500:
+                    instructions = instructions[:1500] + "..."
+                return instructions
+
+            # No "How to test" section — take the tail of the extracted text
+            lines = text.strip().splitlines()
+            tail = "\n".join(lines[-40:]) if len(lines) > 40 else "\n".join(lines)
+            if len(tail) > 1500:
+                tail = tail[-1500:]
+            return (
+                f"Session finished (exit code {exit_code}). "
+                f"No 'How to test' section found. Last output:\n\n{tail}"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to build review comment for task {task.id}: {e}")
+            return f"Session finished (exit code {exit_code})."
 
     async def _mark_task_failed(self, task_id: int, error: str):
         """Mark a task as failed and requeue it for retry."""
@@ -452,21 +572,29 @@ class TaskScheduler:
             if not subtasks:
                 return
 
-            terminal = {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
+            terminal = {
+                TaskStatus.COMPLETED, TaskStatus.FAILED,
+                TaskStatus.CANCELLED, TaskStatus.READY_FOR_REVIEW,
+            }
             if not all(s.status in terminal for s in subtasks):
                 return
 
-            # All subtasks done — mark parent based on subtask outcomes
+            # All subtasks done — determine parent status
             any_failed = any(s.status == TaskStatus.FAILED for s in subtasks)
-            new_status = TaskStatus.FAILED if any_failed else TaskStatus.COMPLETED
+            any_reviewing = any(s.status == TaskStatus.READY_FOR_REVIEW for s in subtasks)
 
-            await db.update_task(
-                parent_id,
-                TaskUpdate(
-                    status=new_status,
-                    completed_at=datetime.utcnow(),
-                )
-            )
+            if any_failed:
+                new_status = TaskStatus.FAILED
+            elif any_reviewing:
+                new_status = TaskStatus.READY_FOR_REVIEW
+            else:
+                new_status = TaskStatus.COMPLETED
+
+            update_fields = {"status": new_status}
+            if new_status == TaskStatus.COMPLETED:
+                update_fields["completed_at"] = datetime.utcnow()
+
+            await db.update_task(parent_id, TaskUpdate(**update_fields))
 
             await event_bus.emit(
                 f"task.{new_status}",
@@ -475,7 +603,7 @@ class TaskScheduler:
                 entity_id=parent.uuid,
             )
 
-            logger.info(f"Parent task {parent_id} auto-completed with status: {new_status}")
+            logger.info(f"Parent task {parent_id} auto-set to status: {new_status}")
 
         except Exception as e:
             logger.error(f"Failed to check parent completion for {parent_id}: {e}")

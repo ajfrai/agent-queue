@@ -10,6 +10,7 @@ class TaskStatus:
     ASSESSING = "assessing"
     EXECUTING = "executing"
     DECOMPOSED = "decomposed"
+    READY_FOR_REVIEW = "ready_for_review"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -26,6 +27,7 @@ class TaskCreate(BaseModel):
     description: str
     priority: int = 0
     parent_task_id: Optional[int] = None
+    project_id: Optional[int] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -51,6 +53,7 @@ class Task(BaseModel):
     priority: int
     position: int
     parent_task_id: Optional[int] = None
+    project_id: Optional[int] = None
     complexity: Optional[str] = None
     recommended_model: Optional[str] = None
     active_session_id: Optional[int] = None
@@ -183,3 +186,35 @@ class SystemStatus(BaseModel):
     running_sessions: int
     heartbeat_active: bool
     last_heartbeat: Optional[datetime] = None
+
+
+# Project models
+class ProjectCreate(BaseModel):
+    name: str
+    working_directory: str
+    git_repo: str = ""
+    summary: str = ""
+    file_map: str = ""
+
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    working_directory: Optional[str] = None
+    git_repo: Optional[str] = None
+    summary: Optional[str] = None
+    file_map: Optional[str] = None
+
+
+class Project(BaseModel):
+    id: int
+    uuid: str
+    name: str
+    working_directory: str
+    git_repo: str
+    summary: str
+    file_map: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -87,7 +87,14 @@ class AssessmentEngine:
             task_blocks.append(f'  {{"id": {tid}, "title": "{title}", "description": "{desc}"}}')
         tasks_json = "[\n" + ",\n".join(task_blocks) + "\n]"
 
-        return f"""Assess each of the following coding tasks.
+        project_section = ""
+        if config.PROJECT_CONTEXT:
+            project_section = f"""Project Context:
+{config.PROJECT_CONTEXT}
+
+"""
+
+        return f"""{project_section}Assess each of the following coding tasks.
 
 Tasks:
 {tasks_json}
@@ -113,7 +120,13 @@ Respond ONLY with valid JSON, no additional text:"""
 
     def _build_single_prompt(self, title: str, description: str) -> str:
         """Build assessment prompt for a single task."""
-        return f"""Analyze this coding task and provide an assessment.
+        project_section = ""
+        if config.PROJECT_CONTEXT:
+            project_section = f"""Project Context:
+{config.PROJECT_CONTEXT}
+
+"""
+        return f"""{project_section}Analyze this coding task and provide an assessment.
 
 Task Title: {title}
 
@@ -210,7 +223,13 @@ Respond ONLY with valid JSON, no additional text:"""
                 )
             tasks_json = "[\n" + ",\n".join(task_blocks) + "\n]"
 
-            prompt = f"""You are a task queue reviewer. Review these active coding tasks and leave comments ONLY if you have something genuinely useful to say — a clarifying question, a risk flag, a dependency between tasks, or a suggested approach.
+            project_section = ""
+            if config.PROJECT_CONTEXT:
+                project_section = f"""Project Context:
+{config.PROJECT_CONTEXT}
+
+"""
+            prompt = f"""{project_section}You are a task queue reviewer. Review these active coding tasks and leave comments ONLY if you have something genuinely useful to say — a clarifying question, a risk flag, a dependency between tasks, or a suggested approach.
 
 Tasks:
 {tasks_json}

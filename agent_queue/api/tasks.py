@@ -1,12 +1,13 @@
 """Task management API endpoints."""
 
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from ..storage.models import Task, TaskCreate, TaskUpdate, TaskStatus, Comment, CommentCreate, Event
 from ..storage.database import db
+from ..config import config
 from ..core.event_bus import event_bus
 from ..core.task_scheduler import task_scheduler
 
@@ -15,14 +16,20 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 @router.get("", response_model=List[Task])
 async def list_tasks(status: Optional[str] = None, limit: int = 100, offset: int = 0):
-    """List all tasks with optional filtering."""
-    tasks = await db.list_tasks(status=status, limit=limit, offset=offset)
+    """List all tasks with optional filtering. Scoped to active project if set."""
+    tasks = await db.list_tasks(
+        status=status, project_id=config.PROJECT_ID, limit=limit, offset=offset
+    )
     return tasks
 
 
 @router.post("", response_model=Task)
 async def create_task(task: TaskCreate):
     """Create a new task."""
+    # Auto-assign project_id if not set and a project is active
+    if task.project_id is None and config.PROJECT_ID is not None:
+        task.project_id = config.PROJECT_ID
+
     created_task = await db.create_task(task)
 
     await event_bus.emit(
@@ -37,6 +44,18 @@ async def create_task(task: TaskCreate):
     )
 
     return created_task
+
+
+# This must be declared before /{task_id} to avoid path conflict
+@router.get("/latest-comments")
+async def get_latest_comments(task_ids: str = Query(..., description="Comma-separated task IDs")):
+    """Get the latest comment per task for a batch of task IDs."""
+    try:
+        ids = [int(x.strip()) for x in task_ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="task_ids must be comma-separated integers")
+    comments = await db.get_latest_comments(ids)
+    return {str(tid): comment.model_dump(mode="json") for tid, comment in comments.items()}
 
 
 @router.get("/{task_id}", response_model=Task)
@@ -74,7 +93,8 @@ class StatusChangeRequest(BaseModel):
 
 VALID_STATUSES = {
     TaskStatus.PENDING, TaskStatus.EXECUTING, TaskStatus.DECOMPOSED,
-    TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED,
+    TaskStatus.READY_FOR_REVIEW, TaskStatus.COMPLETED,
+    TaskStatus.FAILED, TaskStatus.CANCELLED,
 }
 
 
@@ -109,7 +129,7 @@ async def change_task_status(task_id: int, body: StatusChangeRequest):
     )
 
     # Check parent auto-completion when marking a subtask terminal
-    if new_status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
+    if new_status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.READY_FOR_REVIEW):
         if task.parent_task_id:
             await task_scheduler._check_parent_completion(task.parent_task_id)
 
@@ -169,10 +189,24 @@ async def list_comments(task_id: int):
     return comments
 
 
+class CommentBody(BaseModel):
+    content: str
+    author: str = "user"
+
+
 @router.post("/{task_id}/comments", response_model=Comment)
-async def create_comment(task_id: int, content: str, author: str = "user"):
-    """Add a comment to a task."""
-    comment = CommentCreate(task_id=task_id, content=content, author=author)
+async def create_comment(task_id: int, body: CommentBody):
+    """Add a comment to a task.
+
+    If the task is ready_for_review and the comment is from a user,
+    automatically send it back to pending so the scheduler re-runs it
+    with the feedback.
+    """
+    task = await db.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    comment = CommentCreate(task_id=task_id, content=body.content, author=body.author)
     created_comment = await db.create_comment(comment)
 
     await event_bus.emit(
@@ -180,10 +214,27 @@ async def create_comment(task_id: int, content: str, author: str = "user"):
         {
             "task_id": task_id,
             "comment_id": created_comment.id,
-            "author": author,
+            "author": body.author,
         },
         entity_type="comment",
         entity_id=created_comment.uuid,
     )
+
+    # Auto-requeue: user feedback on a reviewed task sends it back for rework
+    if body.author == "user" and task.status == TaskStatus.READY_FOR_REVIEW:
+        await db.update_task(
+            task_id,
+            TaskUpdate(
+                status=TaskStatus.PENDING,
+                active_session_id=None,
+                completed_at=None,
+            ),
+        )
+        await event_bus.emit(
+            "task.requeued",
+            {"task_id": task_id, "reason": "user_feedback"},
+            entity_type="task",
+            entity_id=task.uuid,
+        )
 
     return created_comment
