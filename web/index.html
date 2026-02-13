@@ -172,7 +172,7 @@
                 <h2>New Task</h2>
                 <button id="close-form-modal" class="modal-close">X</button>
             </div>
-            <form id="create-task-form" class="modal-body">
+            <form id="create-task-form" class="modal-body modal-form-wrapper">
                 <div class="modal-section">
                     <input
                         type="text"
@@ -194,11 +194,11 @@
                     <label>Priority (0-10)</label>
                     <input type="number" id="task-priority" value="0" min="0" max="10" />
                 </div>
+                <div class="modal-actions">
+                    <button type="button" id="cancel-task-form" class="btn-secondary">Cancel</button>
+                    <button type="submit" class="btn-primary">Create Task</button>
+                </div>
             </form>
-            <div class="modal-actions">
-                <button type="button" id="cancel-task-form" class="btn-secondary">Cancel</button>
-                <button type="submit" form="create-task-form" class="btn-primary">Create Task</button>
-            </div>
         </div>
     </div>
 
@@ -209,7 +209,7 @@
                 <h2>New Project</h2>
                 <button id="close-new-project-modal" class="modal-close">X</button>
             </div>
-            <div class="modal-body">
+            <form id="new-project-form" class="modal-body modal-form-wrapper">
                 <div class="modal-section">
                     <label>Project Name</label>
                     <input
@@ -227,11 +227,11 @@
                     </label>
                 </div>
                 <div id="new-project-status" class="import-status hidden"></div>
-            </div>
-            <div class="modal-actions">
-                <button type="button" id="cancel-new-project" class="btn-secondary">Cancel</button>
-                <button type="button" id="submit-new-project" class="btn-primary">Create</button>
-            </div>
+                <div class="modal-actions">
+                    <button type="button" id="cancel-new-project" class="btn-secondary">Cancel</button>
+                    <button type="submit" id="submit-new-project" class="btn-primary">Create</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -242,7 +242,7 @@
                 <h2>Import Repository</h2>
                 <button id="close-import-modal" class="modal-close">X</button>
             </div>
-            <div class="modal-body">
+            <form id="import-repo-form" class="modal-body modal-form-wrapper">
                 <div class="modal-section">
                     <label>GitHub Repository</label>
                     <input
@@ -254,11 +254,11 @@
                     />
                 </div>
                 <div id="import-status" class="import-status hidden"></div>
-            </div>
-            <div class="modal-actions">
-                <button type="button" id="cancel-import" class="btn-secondary">Cancel</button>
-                <button type="button" id="submit-import" class="btn-primary">Import</button>
-            </div>
+                <div class="modal-actions">
+                    <button type="button" id="cancel-import" class="btn-secondary">Cancel</button>
+                    <button type="submit" id="submit-import" class="btn-primary">Import</button>
+                </div>
+            </form>
         </div>
     </div>
 
