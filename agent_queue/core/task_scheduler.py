@@ -78,9 +78,26 @@ class TaskScheduler:
                 logger.debug("No active tasks to review")
                 return 0
 
+            # Filter out tasks where the bot commented last (without user response)
+            task_ids = [t.id for t in active_tasks]
+            latest_comments = await db.get_latest_comments(task_ids)
+
+            tasks_to_review = []
+            for t in active_tasks:
+                last_comment = latest_comments.get(t.id)
+                # Only review if: no comments yet OR last comment was from user
+                if not last_comment or last_comment.author == "user":
+                    tasks_to_review.append(t)
+                else:
+                    logger.debug(f"Skipping task {t.id} - bot already commented, waiting for user response")
+
+            if not tasks_to_review:
+                logger.debug("No tasks eligible for commenting (bot already commented on all)")
+                return 0
+
             # Build review input with status context
             review_input = []
-            for t in active_tasks[:10]:
+            for t in tasks_to_review[:10]:
                 info_parts = []
                 if t.complexity:
                     info_parts.append(f"assessed: {t.complexity}/{t.recommended_model}")
@@ -101,7 +118,7 @@ class TaskScheduler:
 
             from ..storage.models import CommentCreate
             for c in comments:
-                task = next((t for t in active_tasks if t.id == c["id"]), None)
+                task = next((t for t in tasks_to_review if t.id == c["id"]), None)
                 if not task:
                     continue
 
