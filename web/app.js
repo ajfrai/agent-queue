@@ -1070,17 +1070,28 @@ class AgentQueue {
                 container.innerHTML = '<span class="event-loading">No comments yet</span>';
                 return;
             }
-            container.innerHTML = comments.map(c => {
+
+            // Render comments with markdown support
+            const commentElements = [];
+            for (const c of comments) {
                 const time = new Date(c.created_at).toLocaleString();
                 const isSystem = c.author === 'system';
-                return `<div class="comment-item ${isSystem ? 'comment-system' : ''}">
+                const renderedContent = await this.renderMarkdown(c.content);
+
+                const div = document.createElement('div');
+                div.className = `comment-item ${isSystem ? 'comment-system' : ''}`;
+                div.innerHTML = `
                     <div class="comment-header">
                         <span class="comment-author">${this.escapeHtml(c.author)}</span>
                         <span class="comment-time">${time}</span>
                     </div>
-                    <div class="comment-body">${this.escapeHtml(c.content)}</div>
-                </div>`;
-            }).join('');
+                    <div class="comment-body">${renderedContent}</div>
+                `;
+                commentElements.push(div);
+            }
+
+            container.innerHTML = '';
+            commentElements.forEach(el => container.appendChild(el));
             container.scrollTop = container.scrollHeight;
         } catch (e) {
             container.innerHTML = '<span class="event-loading">Error loading comments</span>';
@@ -1406,6 +1417,30 @@ class AgentQueue {
             this.renderProjectDropdown();
         } catch (e) {
             // Silently ignore
+        }
+    }
+
+    // Markdown rendering
+    async renderMarkdown(content) {
+        try {
+            // Use marked to convert markdown to HTML
+            // Configure marked to use sensible defaults
+            const html = await marked.parse(content, {
+                breaks: true,
+                gfm: true
+            });
+
+            // Sanitize the HTML to prevent XSS
+            const sanitized = DOMPurify.sanitize(html, {
+                ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'a', 'img'],
+                ALLOWED_ATTR: ['href', 'title', 'src', 'alt']
+            });
+
+            return sanitized;
+        } catch (e) {
+            console.error('Error rendering markdown:', e);
+            // Fallback to escaped text if markdown fails
+            return this.escapeHtml(content);
         }
     }
 
