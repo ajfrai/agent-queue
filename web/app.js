@@ -1449,13 +1449,22 @@ class AgentQueue {
 
     // Auto-link plain URLs that aren't already part of markdown links
     autoLinkUrls(content) {
-        // Match URLs that aren't already markdown links [text](url) or HTML <a href="url">
+        // Match URLs that aren't already markdown links
         // This regex matches http(s)://, ftp://, and www. URLs
-        const urlRegex = /(?<!\[|\(|href=["'])(https?:\/\/[^\s\)]+|ftp:\/\/[^\s\)]+|www\.[^\s\)]+)/g;
+        const urlRegex = /(https?:\/\/[^\s\)]+|ftp:\/\/[^\s\)]+|www\.[^\s\)]+)/g;
 
-        return content.replace(urlRegex, (match) => {
-            // Check if this URL is already part of a markdown link or HTML link
-            // by ensuring it's not within [] or () or already a href value
+        // Split content to avoid linking URLs that are already in markdown/HTML link syntax
+        return content.replace(urlRegex, (match, offset, string) => {
+            // Don't link if this URL is already part of markdown link [text](url)
+            // Check if it's inside parentheses preceded by ]
+            const before = string.substring(Math.max(0, offset - 10), offset);
+            const after = string.substring(offset + match.length, Math.min(string.length, offset + match.length + 10));
+
+            // Skip if it's already a markdown link [text](url)
+            if (before.includes('](') || before.includes('href="') || before.includes("href='")) {
+                return match;
+            }
+
             let url = match;
 
             // Ensure www. URLs have a protocol
