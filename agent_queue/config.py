@@ -13,13 +13,14 @@ class Config:
     DATA_DIR = BASE_DIR / "data"
     DB_PATH = DATA_DIR / "queue.db"
     SESSIONS_DIR = DATA_DIR / "sessions"
+    WORKTREES_DIR = Path(os.getenv("WORKTREES_DIR", str(Path.home() / "agent-queue-worktrees")))
 
     # Server settings
     HOST = os.getenv("HOST", "0.0.0.0")
     PORT = int(os.getenv("PORT", "8000"))
 
     # Heartbeat settings
-    HEARTBEAT_INTERVAL = 300  # seconds (5 minutes)
+    HEARTBEAT_INTERVAL = 60  # seconds
 
     # Assessment settings
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -28,10 +29,12 @@ class Config:
     # Task settings
     DEFAULT_WORKING_DIR = Path.home()
 
+    # Concurrency settings
+    MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", "2"))
+
     # Project settings
     PROJECT_NAME = None
     PROJECT_ID = None
-    PROJECT_CONTEXT = ""
 
     @classmethod
     def ensure_directories(cls):

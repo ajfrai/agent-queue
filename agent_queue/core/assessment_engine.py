@@ -84,17 +84,10 @@ class AssessmentEngine:
         """Build a prompt that assesses multiple tasks at once."""
         task_blocks = []
         for tid, title, desc in tasks:
-            task_blocks.append(f'  {{"id": {tid}, "title": "{title}", "description": "{desc}"}}')
+            task_blocks.append(f'  {{"id": {tid}, "title": {json.dumps(title)}, "description": {json.dumps(desc)}}}')
         tasks_json = "[\n" + ",\n".join(task_blocks) + "\n]"
 
-        project_section = ""
-        if config.PROJECT_CONTEXT:
-            project_section = f"""Project Context:
-{config.PROJECT_CONTEXT}
-
-"""
-
-        return f"""{project_section}Assess each of the following coding tasks.
+        return f"""Assess each of the following coding tasks.
 
 Tasks:
 {tasks_json}
@@ -105,6 +98,7 @@ For EACH task, provide:
 3. should_decompose: boolean — almost always false (see rules below)
 4. subtasks: array of strings — only if should_decompose is true
 5. reasoning: short string explaining your assessment
+6. comment: string or null — only include if you have a genuinely useful observation (a risk flag, clarifying question, dependency between tasks, or suggested approach). Do NOT comment just to acknowledge the task.
 
 Rules:
 - Simple fixes, additions, single-file changes → "simple"
@@ -115,18 +109,12 @@ Rules:
 - A single feature, bug fix, refactor, or multi-file change should NOT be decomposed
 - When in doubt, do NOT decompose
 
-Respond with a JSON array where each element has "id" plus the 5 fields above.
+Respond with a JSON array where each element has "id" plus the 6 fields above.
 Respond ONLY with valid JSON, no additional text:"""
 
     def _build_single_prompt(self, title: str, description: str) -> str:
         """Build assessment prompt for a single task."""
-        project_section = ""
-        if config.PROJECT_CONTEXT:
-            project_section = f"""Project Context:
-{config.PROJECT_CONTEXT}
-
-"""
-        return f"""{project_section}Analyze this coding task and provide an assessment.
+        return f"""Analyze this coding task and provide an assessment.
 
 Task Title: {title}
 
@@ -139,6 +127,7 @@ Please analyze this task and respond with a JSON object containing:
 3. should_decompose: boolean - whether this should be broken into subtasks
 4. subtasks: array of strings - if decomposition recommended, list subtask titles
 5. reasoning: string explaining your assessment
+6. comment: string or null — only include if you have a genuinely useful observation (a risk flag, clarifying question, dependency, or suggested approach). Do NOT comment just to acknowledge the task.
 
 CRITICAL — Decomposition bias:
 - should_decompose should almost always be false
@@ -168,6 +157,7 @@ Respond ONLY with valid JSON, no additional text:"""
                         should_decompose=item.get("should_decompose", False),
                         subtasks=item.get("subtasks", []),
                         reasoning=item.get("reasoning", ""),
+                        comment=item.get("comment"),
                     )
 
             # Fill in defaults for any tasks not in response
@@ -194,78 +184,13 @@ Respond ONLY with valid JSON, no additional text:"""
                 should_decompose=data.get("should_decompose", False),
                 subtasks=data.get("subtasks", []),
                 reasoning=data.get("reasoning", ""),
+                comment=data.get("comment"),
             )
 
         except Exception as e:
             logger.error(f"Failed to parse assessment response: {e}")
             logger.debug(f"Response text: {response_text}")
             return self._default_assessment()
-
-    async def review_tasks(self, tasks: List[Tuple[int, str, str, str]]) -> List[Dict]:
-        """Review active tasks and optionally leave comments.
-
-        Args:
-            tasks: List of (task_id, title, description, status_info) tuples.
-                   status_info includes assessment state, existing comments, etc.
-
-        Returns:
-            List of {"id": task_id, "comment": str} dicts. Empty list = nothing to say.
-        """
-        if not tasks or not self.client:
-            return []
-
-        try:
-            task_blocks = []
-            for tid, title, desc, info in tasks:
-                task_blocks.append(
-                    f'  {{"id": {tid}, "title": {json.dumps(title)}, '
-                    f'"description": {json.dumps(desc)}, "status": {json.dumps(info)}}}'
-                )
-            tasks_json = "[\n" + ",\n".join(task_blocks) + "\n]"
-
-            project_section = ""
-            if config.PROJECT_CONTEXT:
-                project_section = f"""Project Context:
-{config.PROJECT_CONTEXT}
-
-"""
-            prompt = f"""{project_section}You are a task queue reviewer. Review these active coding tasks and leave comments ONLY if you have something genuinely useful to say — a clarifying question, a risk flag, a dependency between tasks, or a suggested approach.
-
-Tasks:
-{tasks_json}
-
-Rules:
-- Do NOT comment just to acknowledge or restate the task
-- Only comment if you have a real question, concern, or actionable suggestion
-- If everything looks clear and ready, return an empty array
-- Keep comments concise (1-2 sentences)
-
-Respond with a JSON array of {{"id": <task_id>, "comment": "<your comment>"}} objects.
-If no comments needed, respond with [].
-Respond ONLY with valid JSON:"""
-
-            message = self.client.messages.create(
-                model=self.model,
-                max_tokens=2000,
-                temperature=0.0,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            response_text = self._strip_code_fences(message.content[0].text)
-            data = json.loads(response_text)
-
-            if not isinstance(data, list):
-                return []
-
-            return [
-                {"id": item["id"], "comment": item["comment"]}
-                for item in data
-                if item.get("id") is not None and item.get("comment")
-            ]
-
-        except Exception as e:
-            logger.error(f"Failed to review tasks: {e}")
-            return []
 
     def _strip_code_fences(self, text: str) -> str:
         """Strip markdown code fences from response."""

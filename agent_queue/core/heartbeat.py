@@ -16,8 +16,11 @@ logger = logging.getLogger(__name__)
 class HeartbeatManager:
     """Manages the heartbeat loop that coordinates task execution.
 
-    Odd beats: batch-assess up to 10 active unassessed tasks.
-    Even beats: execute the next assessed task.
+    2-phase cycle:
+      Odd beats:  assess — batch-assess unassessed tasks (with optional comments)
+      Even beats: execute — run next N assessed tasks in parallel
+
+    Every 10th beat: garbage-collect stale worktrees.
     """
 
     def __init__(self):
@@ -95,14 +98,13 @@ class HeartbeatManager:
     async def _beat(self) -> dict:
         """Execute a single heartbeat cycle. Returns diagnostic info.
 
-        3-phase cycle:
-          beat % 3 == 1: comment — model reviews tasks, leaves comments
-          beat % 3 == 2: assess  — batch-assess unassessed tasks
-          beat % 3 == 0: execute — run the next assessed task
+        2-phase cycle:
+          odd beats:  assess — batch-assess unassessed tasks (comments folded in)
+          even beats: execute — run next N assessed tasks in parallel
         """
         self.beat_count += 1
-        phase_idx = self.beat_count % 3
-        phase = {1: "comment", 2: "assess", 0: "execute"}[phase_idx]
+        phase_idx = self.beat_count % 2
+        phase = {1: "assess", 0: "execute"}[phase_idx]
 
         diag = {"timestamp": None, "rate_limited": None, "rate_error": None,
                 "beat_number": self.beat_count, "phase": phase}
@@ -167,19 +169,7 @@ class HeartbeatManager:
             logger.error(f"Task dedup failed: {e}", exc_info=True)
 
         # 4. Phase action
-        if phase == "comment":
-            try:
-                comments = await task_scheduler.comment_on_tasks()
-                diag["comments_left"] = comments
-                if comments:
-                    logger.info(f"Heartbeat #{self.beat_count}: left {comments} comment(s)")
-                else:
-                    logger.debug(f"Heartbeat #{self.beat_count}: no comments")
-            except Exception as e:
-                logger.error(f"Comment phase failed: {e}", exc_info=True)
-                diag["comment_error"] = str(e)
-
-        elif phase == "assess":
+        if phase == "assess":
             try:
                 assessed = await task_scheduler.assess_pending_tasks()
                 diag["tasks_assessed"] = assessed
@@ -193,15 +183,23 @@ class HeartbeatManager:
 
         elif phase == "execute":
             try:
-                executed = await task_scheduler.execute_next_task()
-                diag["task_executed"] = executed
+                executed = await task_scheduler.execute_next_tasks()
+                diag["tasks_executed"] = executed
                 if executed:
-                    logger.info(f"Heartbeat #{self.beat_count}: executed/checked task(s)")
+                    logger.info(f"Heartbeat #{self.beat_count}: executed/checked {executed} task(s)")
                 else:
                     logger.debug(f"Heartbeat #{self.beat_count}: no tasks to execute")
             except Exception as e:
                 logger.error(f"Execution failed: {e}", exc_info=True)
                 diag["execute_error"] = str(e)
+
+        # 5. Periodic garbage collection (every 10th beat)
+        if self.beat_count % 10 == 0:
+            try:
+                await task_scheduler.cleanup_stale_worktrees()
+                logger.debug(f"Heartbeat #{self.beat_count}: GC pass completed")
+            except Exception as e:
+                logger.error(f"Worktree GC failed: {e}", exc_info=True)
 
         return diag
 

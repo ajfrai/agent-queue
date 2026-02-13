@@ -5,6 +5,8 @@ import logging
 import re
 from pathlib import Path
 
+from ..config import config
+
 logger = logging.getLogger(__name__)
 
 REPOS_DIR = Path.home() / "agent-queue-repos"
@@ -221,3 +223,80 @@ async def create_pr(
     pr_url = out.strip()
     logger.info(f"Created PR: {pr_url}")
     return pr_url
+
+
+async def create_worktree(repo_dir: Path, branch_name: str) -> Path:
+    """Create an isolated worktree for a task branch.
+
+    Returns the path to the new worktree directory.
+    """
+    config.WORKTREES_DIR.mkdir(parents=True, exist_ok=True)
+    worktree_path = config.WORKTREES_DIR / branch_name
+
+    # Ensure we're up to date on default branch
+    default = await get_default_branch(repo_dir)
+    await _run(["git", "fetch", "origin"], cwd=repo_dir)
+
+    # Create worktree with new branch from origin/default
+    rc, out, err = await _run(
+        ["git", "worktree", "add", "-b", branch_name,
+         str(worktree_path), f"origin/{default}"],
+        cwd=repo_dir,
+    )
+    if rc != 0:
+        raise RuntimeError(f"Failed to create worktree: {err}")
+
+    logger.info(f"Created worktree at {worktree_path} on branch {branch_name}")
+    return worktree_path
+
+
+async def remove_worktree(repo_dir: Path, worktree_path: Path):
+    """Remove a worktree and prune."""
+    await _run(["git", "worktree", "remove", str(worktree_path), "--force"], cwd=repo_dir)
+    await _run(["git", "worktree", "prune"], cwd=repo_dir)
+    logger.info(f"Removed worktree at {worktree_path}")
+
+
+async def delete_branch(repo_dir: Path, branch_name: str, remote: bool = True):
+    """Delete a branch locally and optionally from remote."""
+    await _run(["git", "branch", "-D", branch_name], cwd=repo_dir)
+    if remote:
+        await _run(["git", "push", "origin", "--delete", branch_name], cwd=repo_dir)
+    logger.info(f"Deleted branch {branch_name} (remote={remote})")
+
+
+async def cleanup_stale_worktrees(repo_dir: Path, active_branches: set[str]):
+    """Remove worktrees whose tasks are no longer active.
+
+    Args:
+        repo_dir: The main repository directory.
+        active_branches: Set of branch names that are still in use.
+    """
+    rc, out, err = await _run(["git", "worktree", "list", "--porcelain"], cwd=repo_dir)
+    if rc != 0:
+        logger.warning(f"Failed to list worktrees: {err}")
+        return
+
+    # Parse porcelain output to find worktree paths and branches
+    current_path = None
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            current_path = Path(line.split(" ", 1)[1])
+        elif line.startswith("branch ") and current_path:
+            branch = line.split(" ", 1)[1]
+            # Strip refs/heads/ prefix
+            branch_name = branch.replace("refs/heads/", "")
+
+            # Skip the main worktree (the repo itself)
+            if current_path == repo_dir:
+                current_path = None
+                continue
+
+            # Remove if not in active set
+            if branch_name not in active_branches:
+                try:
+                    await remove_worktree(repo_dir, current_path)
+                    logger.info(f"GC: removed stale worktree {current_path} ({branch_name})")
+                except Exception as e:
+                    logger.warning(f"GC: failed to remove worktree {current_path}: {e}")
+            current_path = None

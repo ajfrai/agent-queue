@@ -210,6 +210,11 @@ class Database:
 
     async def get_next_assessed_task(self, project_id: Optional[int] = None) -> Optional[Task]:
         """Get the next active pending task that has been assessed."""
+        tasks = await self.get_next_assessed_tasks(limit=1, project_id=project_id)
+        return tasks[0] if tasks else None
+
+    async def get_next_assessed_tasks(self, limit: int = 1, project_id: Optional[int] = None) -> List[Task]:
+        """Get the next N active pending tasks that have been assessed."""
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
             query = (
@@ -221,10 +226,11 @@ class Database:
             if project_id is not None:
                 query += "AND project_id = ? "
                 params.append(project_id)
-            query += "ORDER BY position, priority DESC LIMIT 1"
+            query += "ORDER BY position, priority DESC LIMIT ?"
+            params.append(limit)
             cursor = await conn.execute(query, params)
-            row = await cursor.fetchone()
-            return self._row_to_task(row) if row else None
+            rows = await cursor.fetchall()
+            return [self._row_to_task(row) for row in rows]
 
     async def task_exists(self, title: str) -> bool:
         """Check if a task with this title already exists."""

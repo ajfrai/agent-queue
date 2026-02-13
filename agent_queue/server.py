@@ -34,7 +34,6 @@ async def load_project(project_id: Optional[int]):
         config.PROJECT_ID = None
         config.PROJECT_NAME = None
         config.DEFAULT_WORKING_DIR = Path.home()
-        config.PROJECT_CONTEXT = ""
         logger.info("Unscoped from project")
         return None
 
@@ -45,13 +44,6 @@ async def load_project(project_id: Optional[int]):
     config.PROJECT_ID = project.id
     config.PROJECT_NAME = project.name
     config.DEFAULT_WORKING_DIR = Path(project.working_directory)
-
-    parts = []
-    if project.summary:
-        parts.append(f"## Project: {project.name}\n{project.summary}")
-    if project.file_map:
-        parts.append(f"## File Map\n{project.file_map}")
-    config.PROJECT_CONTEXT = "\n\n".join(parts)
 
     logger.info(f"Loaded project '{project.name}' (id={project.id})")
     return project

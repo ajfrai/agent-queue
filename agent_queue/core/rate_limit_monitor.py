@@ -8,8 +8,9 @@ Parses reset times from rate limit error messages.
 import asyncio
 import json
 import logging
+import random
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
 from ..config import config
@@ -20,6 +21,18 @@ logger = logging.getLogger(__name__)
 
 # Timeout for the probe command
 PROBE_TIMEOUT = 30
+
+# Minimum interval between probes (5 minutes)
+PROBE_INTERVAL = timedelta(minutes=5)
+
+# Varied probe messages to avoid repetitive sessions
+_PROBE_MESSAGES = [
+    "ok",
+    "ping",
+    "hi",
+    "test",
+    "1",
+]
 
 # Patterns that indicate rate limiting in Claude CLI output
 RATE_LIMIT_PATTERNS = [
@@ -58,7 +71,11 @@ class RateLimitMonitor:
         self._rate_limited_until: Optional[datetime] = None
 
     async def get_rate_limit_status(self) -> RateLimitStatus:
-        """Check rate limit status via probe or cache."""
+        """Check rate limit status via probe or cache.
+
+        Probes at most once every PROBE_INTERVAL (5 minutes).
+        Returns cached status between probes.
+        """
         now = datetime.now(timezone.utc)
 
         # If we know we're rate limited and haven't hit the reset time, skip probe
@@ -73,6 +90,12 @@ class RateLimitMonitor:
         if self._rate_limited_until and now >= self._rate_limited_until:
             logger.info("Rate limit window has passed, probing...")
             self._rate_limited_until = None
+
+        # Respect probe interval — don't probe more often than every 5 minutes
+        if self._last_probe and (now - self._last_probe) < PROBE_INTERVAL:
+            if self._cached_status:
+                return self._cached_status
+            # No cache yet, fall through to probe
 
         try:
             result = await self._run_probe()
@@ -104,8 +127,14 @@ class RateLimitMonitor:
             env = os.environ.copy()
             env.pop("ANTHROPIC_API_KEY", None)
 
+            # Vary the probe message to avoid repetitive sessions
+            probe_msg = random.choice(_PROBE_MESSAGES)
+
             proc = await asyncio.create_subprocess_exec(
-                "claude", "-p", "--output-format", "json", "respond with just the word ok",
+                "claude", "-p", "--output-format", "json",
+                "--max-turns", "1",
+                "--no-session-persistence",
+                probe_msg,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
@@ -232,7 +261,7 @@ class RateLimitMonitor:
                             )
                             # If the time has passed today, it means tomorrow
                             if reset <= now:
-                                from datetime import timedelta
+
                                 reset += timedelta(days=1)
                             return reset
                         except ValueError:
@@ -254,7 +283,7 @@ class RateLimitMonitor:
                 try:
                     amount = int(groups[0])
                     unit = groups[1].lower()
-                    from datetime import timedelta
+
                     if "hour" in unit or "hr" in unit:
                         return now + timedelta(hours=amount)
                     else:
@@ -263,7 +292,7 @@ class RateLimitMonitor:
                     pass
 
         # Default: assume reset in 1 hour if we can't parse
-        from datetime import timedelta
+
         return now + timedelta(hours=1)
 
     async def _cache_to_db(self, status: RateLimitStatus, raw_output: str):
@@ -310,7 +339,7 @@ class RateLimitMonitor:
 
     def mark_rate_limited(self, reset_at: Optional[datetime] = None):
         """Externally mark as rate limited (e.g., from a session failure)."""
-        from datetime import timedelta
+
         now = datetime.now(timezone.utc)
         self._rate_limited_until = reset_at or (now + timedelta(hours=1))
         self._cached_status = self._make_limited_status()

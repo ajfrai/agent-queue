@@ -63,6 +63,11 @@ class ClaudeCodeCLI:
             "--verbose",
             "--output-format", "stream-json",
             "--dangerously-skip-permissions",
+            # Prevent the agent from managing git itself — the harness handles
+            # branching, committing, pushing, and PR creation.
+            "--disallowedTools", "Bash(git commit:*)", "Bash(git push:*)",
+            "Bash(git checkout:*)", "Bash(git branch:*)", "Bash(git merge:*)",
+            "Bash(git rebase:*)", "Bash(gh pr:*)", "Bash(gh repo:*)",
         ]
 
         if model:

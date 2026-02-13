@@ -176,6 +176,7 @@ class AssessmentResult(BaseModel):
     should_decompose: bool = False
     subtasks: List[str] = Field(default_factory=list)
     reasoning: str = ""
+    comment: Optional[str] = None
 
 
 # System status models
