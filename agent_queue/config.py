@@ -19,7 +19,7 @@ class Config:
     PORT = int(os.getenv("PORT", "8000"))
 
     # Heartbeat settings
-    HEARTBEAT_INTERVAL = 60  # seconds
+    HEARTBEAT_INTERVAL = 300  # seconds (5 minutes)
 
     # Assessment settings
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
