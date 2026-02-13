@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <title>Agent Queue</title>
-    <link rel="stylesheet" href="/static/style.css?v=12">
+    <link rel="stylesheet" href="/static/style.css?v=14">
 </head>
 <body>
     <div class="container">
@@ -194,11 +194,11 @@
                     <label>Priority (0-10)</label>
                     <input type="number" id="task-priority" value="0" min="0" max="10" />
                 </div>
-                <div class="modal-actions">
-                    <button type="button" id="cancel-task-form" class="btn-secondary">Cancel</button>
-                    <button type="submit" class="btn-primary">Create Task</button>
-                </div>
             </form>
+            <div class="modal-actions">
+                <button type="button" id="cancel-task-form" class="btn-secondary">Cancel</button>
+                <button type="submit" form="create-task-form" class="btn-primary">Create Task</button>
+            </div>
         </div>
     </div>
 
@@ -227,10 +227,10 @@
                     </label>
                 </div>
                 <div id="new-project-status" class="import-status hidden"></div>
-                <div class="modal-actions">
-                    <button type="button" id="cancel-new-project" class="btn-secondary">Cancel</button>
-                    <button type="button" id="submit-new-project" class="btn-primary">Create</button>
-                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="cancel-new-project" class="btn-secondary">Cancel</button>
+                <button type="button" id="submit-new-project" class="btn-primary">Create</button>
             </div>
         </div>
     </div>
@@ -254,10 +254,10 @@
                     />
                 </div>
                 <div id="import-status" class="import-status hidden"></div>
-                <div class="modal-actions">
-                    <button type="button" id="cancel-import" class="btn-secondary">Cancel</button>
-                    <button type="button" id="submit-import" class="btn-primary">Import</button>
-                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="cancel-import" class="btn-secondary">Cancel</button>
+                <button type="button" id="submit-import" class="btn-primary">Import</button>
             </div>
         </div>
     </div>
