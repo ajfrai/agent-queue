@@ -10,6 +10,7 @@ from ..config import config
 from .event_bus import event_bus
 from .assessment_engine import assessment_engine
 from .session_manager import session_manager
+from . import git_manager
 
 logger = logging.getLogger(__name__)
 
@@ -307,8 +308,23 @@ class TaskScheduler:
                 entity_id=task.uuid,
             )
 
-            # Create a session
+            # Create git branch if project has a git repo
             working_dir = config.DEFAULT_WORKING_DIR
+            if task.project_id:
+                project = await db.get_project(task.project_id)
+                if project and project.git_repo:
+                    working_dir = Path(project.working_directory)
+                    slug = git_manager.slugify(task.title)
+                    branch_name = f"task-{task_id}-{slug}"
+                    try:
+                        await git_manager.create_branch(working_dir, branch_name)
+                        await db.update_task(
+                            task_id,
+                            TaskUpdate(metadata={"branch": branch_name})
+                        )
+                        logger.info(f"Created branch {branch_name} for task {task_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to create branch for task {task_id}: {e}")
             session = await session_manager.create_session(
                 task_id=task_id,
                 working_directory=str(working_dir),
@@ -425,6 +441,35 @@ class TaskScheduler:
 
             # Build a useful review comment from session output
             review_comment = await self._build_review_comment(task, exit_code)
+
+            # Auto-PR if project has git_repo and task has a branch
+            pr_url = None
+            branch_name = (task.metadata or {}).get("branch")
+            if task.project_id and branch_name:
+                project = await db.get_project(task.project_id)
+                if project and project.git_repo:
+                    working_dir = Path(project.working_directory)
+                    try:
+                        await git_manager.commit_and_push(
+                            working_dir, branch_name,
+                            f"Task #{task_id}: {task.title}"
+                        )
+                        pr_url = await git_manager.create_pr(
+                            project.git_repo,
+                            branch_name,
+                            task.title,
+                            review_comment[:65000],
+                            working_dir,
+                        )
+                        await db.update_task(
+                            task_id,
+                            TaskUpdate(metadata={"pr_url": pr_url})
+                        )
+                        review_comment += f"\n\n**Pull Request:** {pr_url}"
+                        logger.info(f"Created PR for task {task_id}: {pr_url}")
+                    except Exception as e:
+                        logger.warning(f"Failed to create PR for task {task_id}: {e}")
+                        review_comment += f"\n\n*Auto-PR failed: {e}*"
 
             from ..storage.models import CommentCreate
             await db.create_comment(CommentCreate(

@@ -12,7 +12,25 @@
     <div class="container">
         <!-- Header -->
         <header class="header">
-            <h1>Agent Queue <span id="project-name" class="project-name"></span></h1>
+            <div class="header-title-row">
+                <h1>Agent Queue</h1>
+                <div class="project-selector" id="project-selector">
+                    <button class="project-selector-btn" id="project-selector-btn">
+                        <span id="project-name">No project</span>
+                        <span class="selector-arrow">&#9662;</span>
+                    </button>
+                    <div class="project-dropdown hidden" id="project-dropdown">
+                        <div class="dropdown-items" id="dropdown-items">
+                            <!-- Projects loaded dynamically -->
+                        </div>
+                        <div class="dropdown-divider"></div>
+                        <button class="dropdown-action" id="dropdown-new">+ New project</button>
+                        <button class="dropdown-action" id="dropdown-import">+ Import repo</button>
+                        <button class="dropdown-action" id="dropdown-manage">Manage projects</button>
+                        <button class="dropdown-action dropdown-unscope" id="dropdown-unscope">Unscope</button>
+                    </div>
+                </div>
+            </div>
             <div class="status-bar">
                 <div class="status-item">
                     <span class="status-label">Rate:</span>
@@ -184,9 +202,84 @@
         </div>
     </div>
 
+    <!-- New Project Modal -->
+    <div id="new-project-modal" class="modal hidden">
+        <div class="modal-content modal-form">
+            <div class="modal-header">
+                <h2>New Project</h2>
+                <button id="close-new-project-modal" class="modal-close">X</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <label>Project Name</label>
+                    <input
+                        type="text"
+                        id="new-project-name"
+                        placeholder="my-project"
+                        autocomplete="off"
+                        required
+                    />
+                </div>
+                <div class="modal-section">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="new-project-private" />
+                        Private repository
+                    </label>
+                </div>
+                <div id="new-project-status" class="import-status hidden"></div>
+                <div class="modal-actions">
+                    <button type="button" id="cancel-new-project" class="btn-secondary">Cancel</button>
+                    <button type="button" id="submit-new-project" class="btn-primary">Create</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Repo Modal -->
+    <div id="import-modal" class="modal hidden">
+        <div class="modal-content modal-form">
+            <div class="modal-header">
+                <h2>Import Repository</h2>
+                <button id="close-import-modal" class="modal-close">X</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <label>GitHub Repository</label>
+                    <input
+                        type="text"
+                        id="import-repo-input"
+                        placeholder="owner/repo"
+                        autocomplete="off"
+                        required
+                    />
+                </div>
+                <div id="import-status" class="import-status hidden"></div>
+                <div class="modal-actions">
+                    <button type="button" id="cancel-import" class="btn-secondary">Cancel</button>
+                    <button type="button" id="submit-import" class="btn-primary">Import</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Projects Modal -->
+    <div id="manage-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Manage Projects</h2>
+                <button id="close-manage-modal" class="modal-close">X</button>
+            </div>
+            <div class="modal-body">
+                <div id="manage-projects-list" class="manage-projects-list">
+                    <!-- Projects loaded dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal backdrop -->
     <div id="modal-backdrop" class="modal-backdrop hidden"></div>
 
-    <script src="/static/app.js?v=17"></script>
+    <script src="/static/app.js?v=18"></script>
 </body>
 </html>

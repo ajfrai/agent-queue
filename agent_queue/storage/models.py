@@ -195,6 +195,7 @@ class ProjectCreate(BaseModel):
     git_repo: str = ""
     summary: str = ""
     file_map: str = ""
+    default_branch: str = "main"
 
 
 class ProjectUpdate(BaseModel):
@@ -203,6 +204,7 @@ class ProjectUpdate(BaseModel):
     git_repo: Optional[str] = None
     summary: Optional[str] = None
     file_map: Optional[str] = None
+    default_branch: Optional[str] = None
 
 
 class Project(BaseModel):
@@ -213,6 +215,7 @@ class Project(BaseModel):
     git_repo: str
     summary: str
     file_map: str
+    default_branch: str = "main"
     created_at: datetime
     updated_at: datetime
 

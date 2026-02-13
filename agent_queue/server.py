@@ -3,6 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +24,39 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def load_project(project_id: Optional[int]):
+    """Load (or unload) a project into the global config.
+
+    Args:
+        project_id: The project ID to load, or None to unscope.
+    """
+    if project_id is None:
+        config.PROJECT_ID = None
+        config.PROJECT_NAME = None
+        config.DEFAULT_WORKING_DIR = Path.home()
+        config.PROJECT_CONTEXT = ""
+        logger.info("Unscoped from project")
+        return None
+
+    project = await db.get_project(project_id)
+    if not project:
+        return None
+
+    config.PROJECT_ID = project.id
+    config.PROJECT_NAME = project.name
+    config.DEFAULT_WORKING_DIR = Path(project.working_directory)
+
+    parts = []
+    if project.summary:
+        parts.append(f"## Project: {project.name}\n{project.summary}")
+    if project.file_map:
+        parts.append(f"## File Map\n{project.file_map}")
+    config.PROJECT_CONTEXT = "\n\n".join(parts)
+
+    logger.info(f"Loaded project '{project.name}' (id={project.id})")
+    return project
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
@@ -38,15 +72,7 @@ async def lifespan(app: FastAPI):
     if config.PROJECT_NAME:
         project = await db.get_project_by_name(config.PROJECT_NAME)
         if project:
-            config.PROJECT_ID = project.id
-            config.DEFAULT_WORKING_DIR = project.working_directory
-            parts = []
-            if project.summary:
-                parts.append(f"## Project: {project.name}\n{project.summary}")
-            if project.file_map:
-                parts.append(f"## File Map\n{project.file_map}")
-            config.PROJECT_CONTEXT = "\n\n".join(parts)
-            logger.info(f"Loaded project '{project.name}' (id={project.id})")
+            await load_project(project.id)
         else:
             logger.warning(f"Project '{config.PROJECT_NAME}' not found — running unscoped")
 

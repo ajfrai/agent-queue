@@ -1376,11 +1376,237 @@ button:active {
     flex-shrink: 0;
 }
 
-/* Project name in header */
-.project-name {
-    font-size: 14px;
-    font-weight: 400;
+/* Project selector in header */
+.header-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.project-selector {
+    position: relative;
+}
+
+.project-selector-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+    cursor: pointer;
+    min-height: 32px;
+    transition: background 0.15s;
+}
+
+.project-selector-btn:hover {
+    background: #e5e7eb;
+}
+
+.selector-arrow {
+    font-size: 10px;
+    color: #9ca3af;
+}
+
+#project-name {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 220px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    z-index: 600;
+    overflow: hidden;
+}
+
+.project-dropdown.hidden {
+    display: none;
+}
+
+.dropdown-items {
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.dropdown-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    font-size: 13px;
+    color: #111;
+    min-height: auto;
+    border-radius: 0;
+    transition: background 0.1s;
+}
+
+.dropdown-item:hover {
+    background: #f3f4f6;
+}
+
+.dropdown-item.active {
+    background: #eff6ff;
+    border-left: 2px solid #2563eb;
+}
+
+.dropdown-item-name {
+    font-weight: 500;
+}
+
+.dropdown-item-repo {
+    font-size: 11px;
     color: #6b7280;
+}
+
+.dropdown-divider {
+    height: 1px;
+    background: #e5e7eb;
+    margin: 0;
+}
+
+.dropdown-action {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: #2563eb;
+    min-height: auto;
+    border-radius: 0;
+    transition: background 0.1s;
+}
+
+.dropdown-action:hover {
+    background: #eff6ff;
+}
+
+.dropdown-action.dropdown-unscope {
+    color: #6b7280;
+}
+
+.dropdown-empty {
+    padding: 12px;
+    color: #9ca3af;
+    font-size: 13px;
+    text-align: center;
+}
+
+.checkbox-label {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: #374151 !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+/* Import status */
+.import-status {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-bottom: 12px;
+}
+
+.import-status.hidden {
+    display: none;
+}
+
+.import-status.importing {
+    background: #eff6ff;
+    color: #2563eb;
+}
+
+.import-status.success {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.import-status.error {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Manage projects list */
+.manage-projects-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.manage-project-card {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 12px;
+}
+
+.manage-project-card.active {
+    border-color: #3b82f6;
+    background: #eff6ff;
+}
+
+.manage-project-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.manage-project-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: #111;
+}
+
+.manage-project-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: #2563eb;
+    color: #fff;
+    font-weight: 500;
+}
+
+.manage-project-detail {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 2px;
+    word-break: break-all;
+}
+
+.manage-project-detail strong {
+    color: #374151;
 }
 
 /* Comment section in modal */

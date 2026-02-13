@@ -23,9 +23,8 @@ async def stream_events():
                 # Get next event from queue
                 event = await queue.get()
 
-                # Format as SSE event
+                # Format as SSE — no "event" field so onmessage fires
                 yield {
-                    "event": event["event_type"],
                     "data": json.dumps(event),
                 }
 

@@ -43,6 +43,7 @@ class Database:
             for stmt in [
                 "ALTER TABLE tasks ADD COLUMN project_id INTEGER REFERENCES projects(id)",
                 "ALTER TABLE projects ADD COLUMN git_repo TEXT DEFAULT ''",
+                "ALTER TABLE projects ADD COLUMN default_branch TEXT DEFAULT 'main'",
             ]:
                 try:
                     await conn.execute(stmt)
@@ -513,10 +514,11 @@ class Database:
             conn.row_factory = aiosqlite.Row
             project_uuid = str(uuid4())
             await conn.execute(
-                "INSERT INTO projects (uuid, name, working_directory, git_repo, summary, file_map) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO projects (uuid, name, working_directory, git_repo, summary, file_map, default_branch) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (project_uuid, project.name, project.working_directory,
-                 project.git_repo, project.summary, project.file_map),
+                 project.git_repo, project.summary, project.file_map,
+                 project.default_branch),
             )
             await conn.commit()
             cursor = await conn.execute("SELECT * FROM projects WHERE uuid = ?", (project_uuid,))
@@ -566,14 +568,16 @@ class Database:
 
     def _row_to_project(self, row: aiosqlite.Row) -> Project:
         """Convert a database row to a Project model."""
+        keys = row.keys()
         return Project(
             id=row["id"],
             uuid=row["uuid"],
             name=row["name"],
             working_directory=row["working_directory"],
-            git_repo=row["git_repo"] if "git_repo" in row.keys() else "",
+            git_repo=row["git_repo"] if "git_repo" in keys else "",
             summary=row["summary"] or "",
             file_map=row["file_map"] or "",
+            default_branch=row["default_branch"] if "default_branch" in keys else "main",
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )

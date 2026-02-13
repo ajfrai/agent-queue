@@ -3,6 +3,8 @@
 class AgentQueue {
     constructor() {
         this.tasks = [];
+        this.projects = [];
+        this.activeProjectId = null;
         this.currentFilter = 'all';
         this.eventSource = null;
         this.heartbeatCount = 0;
@@ -16,7 +18,9 @@ class AgentQueue {
         this.setupFormHandlers();
         this.setupFilterTabs();
         this.setupModalHandlers();
+        this.setupProjectSelector();
         this.setupFAB();
+        this.loadProjects();
         this.loadTasks();
         this.loadSystemStatus();
         this.loadProjectInfo();
@@ -35,11 +39,6 @@ class AgentQueue {
             console.error('SSE connection error:', error);
             setTimeout(() => this.setupEventSource(), 5000);
         };
-
-        this.eventSource.addEventListener('heartbeat.tick', (event) => {
-            const data = JSON.parse(event.data);
-            this.updateHeartbeatStatus(data);
-        });
     }
 
     handleEvent(event) {
@@ -49,7 +48,6 @@ class AgentQueue {
             this.loadTasks();
         } else if (event.event_type.startsWith('comment.')) {
             this.loadTasks();
-            // Reload comments in modal if open for this task
             if (this.currentModalTaskId && event.payload && event.payload.task_id === this.currentModalTaskId) {
                 this.loadComments(this.currentModalTaskId);
             }
@@ -57,6 +55,12 @@ class AgentQueue {
             this.handleSessionEvent(event);
         } else if (event.event_type === 'heartbeat.tick') {
             this.updateHeartbeatStatus(event);
+        } else if (event.event_type === 'project.switched') {
+            this.loadTasks();
+            this.loadProjectInfo();
+            this.loadProjects();
+        } else if (event.event_type === 'project.created') {
+            this.loadProjects();
         }
 
         this.loadSystemStatus();
@@ -147,6 +151,9 @@ class AgentQueue {
         backdrop.addEventListener('click', () => {
             this.closeTaskModal();
             this.closeAddTaskModal();
+            this.closeNewProjectModal();
+            this.closeImportModal();
+            this.closeManageModal();
         });
     }
 
@@ -1117,17 +1124,288 @@ class AgentQueue {
         }
     }
 
+    // Project management
+    setupProjectSelector() {
+        const btn = document.getElementById('project-selector-btn');
+        const dropdown = document.getElementById('project-dropdown');
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdown.classList.toggle('hidden');
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!document.getElementById('project-selector').contains(e.target)) {
+                dropdown.classList.add('hidden');
+            }
+        });
+
+        document.getElementById('dropdown-new').addEventListener('click', () => {
+            dropdown.classList.add('hidden');
+            this.openNewProjectModal();
+        });
+
+        document.getElementById('dropdown-import').addEventListener('click', () => {
+            dropdown.classList.add('hidden');
+            this.openImportModal();
+        });
+
+        document.getElementById('dropdown-manage').addEventListener('click', () => {
+            dropdown.classList.add('hidden');
+            this.openManageModal();
+        });
+
+        document.getElementById('dropdown-unscope').addEventListener('click', () => {
+            dropdown.classList.add('hidden');
+            this.switchProject(null);
+        });
+
+        // New project modal handlers
+        document.getElementById('close-new-project-modal').addEventListener('click', () => this.closeNewProjectModal());
+        document.getElementById('cancel-new-project').addEventListener('click', () => this.closeNewProjectModal());
+        document.getElementById('submit-new-project').addEventListener('click', () => this.createNewProject());
+        document.getElementById('new-project-name').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.createNewProject();
+        });
+
+        // Import modal handlers
+        document.getElementById('close-import-modal').addEventListener('click', () => this.closeImportModal());
+        document.getElementById('cancel-import').addEventListener('click', () => this.closeImportModal());
+        document.getElementById('submit-import').addEventListener('click', () => this.importRepo());
+        document.getElementById('import-repo-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.importRepo();
+        });
+
+        // Manage modal handlers
+        document.getElementById('close-manage-modal').addEventListener('click', () => this.closeManageModal());
+    }
+
+    async loadProjects() {
+        try {
+            const resp = await fetch('/api/projects');
+            if (resp.ok) {
+                this.projects = await resp.json();
+                this.renderProjectDropdown();
+            }
+        } catch (e) {
+            console.error('Error loading projects:', e);
+        }
+    }
+
+    renderProjectDropdown() {
+        const container = document.getElementById('dropdown-items');
+        if (this.projects.length === 0) {
+            container.innerHTML = '<div class="dropdown-empty">No projects</div>';
+            return;
+        }
+        container.innerHTML = this.projects.map(p => `
+            <button class="dropdown-item ${p.id === this.activeProjectId ? 'active' : ''}"
+                    data-project-id="${p.id}">
+                <span class="dropdown-item-name">${this.escapeHtml(p.name)}</span>
+                ${p.git_repo ? `<span class="dropdown-item-repo">${this.escapeHtml(p.git_repo)}</span>` : ''}
+            </button>
+        `).join('');
+
+        container.querySelectorAll('.dropdown-item').forEach(el => {
+            el.addEventListener('click', () => {
+                const id = parseInt(el.dataset.projectId);
+                document.getElementById('project-dropdown').classList.add('hidden');
+                this.switchProject(id);
+            });
+        });
+    }
+
+    async switchProject(projectId) {
+        try {
+            const resp = await fetch('/api/projects/switch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_id: projectId }),
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                this.activeProjectId = projectId;
+                this.updateProjectName(data.project_name);
+                this.renderProjectDropdown();
+                await this.loadTasks();
+                this.showToast(projectId ? `Switched to ${data.project_name}` : 'Unscoped');
+            } else {
+                const err = await resp.json();
+                this.showToast(`Switch failed: ${err.detail || resp.status}`);
+            }
+        } catch (e) {
+            console.error('Error switching project:', e);
+            this.showToast('Error switching project');
+        }
+    }
+
+    updateProjectName(name) {
+        const el = document.getElementById('project-name');
+        if (el) {
+            el.textContent = name || 'No project';
+        }
+    }
+
+    openNewProjectModal() {
+        document.getElementById('new-project-modal').classList.remove('hidden');
+        document.getElementById('modal-backdrop').classList.remove('hidden');
+        document.getElementById('new-project-name').value = '';
+        document.getElementById('new-project-private').checked = false;
+        document.getElementById('new-project-status').classList.add('hidden');
+        document.getElementById('new-project-name').focus();
+    }
+
+    closeNewProjectModal() {
+        document.getElementById('new-project-modal').classList.add('hidden');
+        document.getElementById('modal-backdrop').classList.add('hidden');
+    }
+
+    async createNewProject() {
+        const input = document.getElementById('new-project-name');
+        const name = input.value.trim();
+        if (!name) return;
+
+        const isPrivate = document.getElementById('new-project-private').checked;
+        const statusEl = document.getElementById('new-project-status');
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = 'Creating GitHub repo and project...';
+        statusEl.className = 'import-status importing';
+
+        const submitBtn = document.getElementById('submit-new-project');
+        submitBtn.disabled = true;
+
+        try {
+            const resp = await fetch('/api/projects/new', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, private: isPrivate }),
+            });
+
+            if (resp.ok) {
+                const project = await resp.json();
+                statusEl.textContent = 'Project created!';
+                statusEl.className = 'import-status success';
+                await this.loadProjects();
+                await this.switchProject(project.id);
+                setTimeout(() => this.closeNewProjectModal(), 800);
+            } else {
+                const err = await resp.json();
+                statusEl.textContent = `Error: ${err.detail || resp.status}`;
+                statusEl.className = 'import-status error';
+            }
+        } catch (e) {
+            statusEl.textContent = `Error: ${e.message}`;
+            statusEl.className = 'import-status error';
+        } finally {
+            submitBtn.disabled = false;
+        }
+    }
+
+    openImportModal() {
+        document.getElementById('import-modal').classList.remove('hidden');
+        document.getElementById('modal-backdrop').classList.remove('hidden');
+        document.getElementById('import-repo-input').value = '';
+        document.getElementById('import-status').classList.add('hidden');
+        document.getElementById('import-repo-input').focus();
+    }
+
+    closeImportModal() {
+        document.getElementById('import-modal').classList.add('hidden');
+        document.getElementById('modal-backdrop').classList.add('hidden');
+    }
+
+    async importRepo() {
+        const input = document.getElementById('import-repo-input');
+        const repo = input.value.trim();
+        if (!repo) return;
+
+        const statusEl = document.getElementById('import-status');
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = 'Cloning repository...';
+        statusEl.className = 'import-status importing';
+
+        const submitBtn = document.getElementById('submit-import');
+        submitBtn.disabled = true;
+
+        try {
+            const resp = await fetch('/api/projects/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ git_repo: repo }),
+            });
+
+            if (resp.ok) {
+                const project = await resp.json();
+                statusEl.textContent = 'Import successful!';
+                statusEl.className = 'import-status success';
+                await this.loadProjects();
+                // Auto-switch to the new project
+                await this.switchProject(project.id);
+                setTimeout(() => this.closeImportModal(), 800);
+            } else {
+                const err = await resp.json();
+                statusEl.textContent = `Error: ${err.detail || resp.status}`;
+                statusEl.className = 'import-status error';
+            }
+        } catch (e) {
+            statusEl.textContent = `Error: ${e.message}`;
+            statusEl.className = 'import-status error';
+        } finally {
+            submitBtn.disabled = false;
+        }
+    }
+
+    openManageModal() {
+        document.getElementById('manage-modal').classList.remove('hidden');
+        document.getElementById('modal-backdrop').classList.remove('hidden');
+        this.renderManageProjects();
+    }
+
+    closeManageModal() {
+        document.getElementById('manage-modal').classList.add('hidden');
+        document.getElementById('modal-backdrop').classList.add('hidden');
+    }
+
+    renderManageProjects() {
+        const container = document.getElementById('manage-projects-list');
+        if (this.projects.length === 0) {
+            container.innerHTML = '<div class="empty-state">No projects yet. Import a repo to get started.</div>';
+            return;
+        }
+
+        // Count tasks per project
+        const taskCounts = {};
+        for (const t of this.tasks) {
+            if (t.project_id) {
+                taskCounts[t.project_id] = (taskCounts[t.project_id] || 0) + 1;
+            }
+        }
+
+        container.innerHTML = this.projects.map(p => `
+            <div class="manage-project-card ${p.id === this.activeProjectId ? 'active' : ''}">
+                <div class="manage-project-header">
+                    <div class="manage-project-name">${this.escapeHtml(p.name)}</div>
+                    ${p.id === this.activeProjectId ? '<span class="manage-project-badge">Active</span>' : ''}
+                </div>
+                ${p.git_repo ? `<div class="manage-project-detail"><strong>Repo:</strong> ${this.escapeHtml(p.git_repo)}</div>` : ''}
+                <div class="manage-project-detail"><strong>Dir:</strong> ${this.escapeHtml(p.working_directory)}</div>
+                <div class="manage-project-detail"><strong>Branch:</strong> ${this.escapeHtml(p.default_branch || 'main')}</div>
+                <div class="manage-project-detail"><strong>Tasks:</strong> ${taskCounts[p.id] || 0}</div>
+                ${p.summary ? `<div class="manage-project-detail"><strong>Summary:</strong> ${this.escapeHtml(p.summary).substring(0, 100)}${p.summary.length > 100 ? '...' : ''}</div>` : ''}
+            </div>
+        `).join('');
+    }
+
     async loadProjectInfo() {
         try {
             const resp = await fetch('/api/project');
             if (!resp.ok) return;
             const info = await resp.json();
-            const el = document.getElementById('project-name');
-            if (el && info.active) {
-                el.textContent = `/ ${info.name}`;
-            }
+            this.activeProjectId = info.id;
+            this.updateProjectName(info.active ? info.name : null);
+            this.renderProjectDropdown();
         } catch (e) {
-            // Silently ignore — project info is optional
+            // Silently ignore
         }
     }
 
