@@ -905,6 +905,12 @@ button:active {
     flex-direction: column;
 }
 
+/* Fix form modal layout - prevent modal-body from expanding with flex: 1 */
+.modal-form .modal-body {
+    flex: 0 1 auto;
+    overflow-y: visible;
+}
+
 @media (min-width: 768px) {
     .modal {
         align-items: center;
@@ -1087,7 +1093,10 @@ button:active {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
-    margin-top: 16px;
+    padding: 16px;
+    border-top: 1px solid #e5e7eb;
+    flex-shrink: 0;
+    background: #fff;
 }
 
 .modal-actions button {
@@ -1095,6 +1104,14 @@ button:active {
     min-width: 100px;
     padding: 10px 16px;
     font-size: 13px;
+}
+
+/* Adjust modal-body margin when actions are inline */
+.modal-body .modal-actions {
+    margin-top: 16px;
+    padding: 0;
+    border-top: none;
+    flex-shrink: 0;
 }
 
 .btn-primary {
