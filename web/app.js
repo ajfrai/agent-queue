@@ -1423,9 +1423,12 @@ class AgentQueue {
     // Markdown rendering
     async renderMarkdown(content) {
         try {
+            // First, auto-link plain URLs that aren't already markdown links
+            const autoLinkedContent = this.autoLinkUrls(content);
+
             // Use marked to convert markdown to HTML
             // Configure marked to use sensible defaults
-            const html = await marked.parse(content, {
+            const html = await marked.parse(autoLinkedContent, {
                 breaks: true,
                 gfm: true
             });
@@ -1442,6 +1445,34 @@ class AgentQueue {
             // Fallback to escaped text if markdown fails
             return this.escapeHtml(content);
         }
+    }
+
+    // Auto-link plain URLs that aren't already part of markdown links
+    autoLinkUrls(content) {
+        // Match URLs that aren't already markdown links
+        // This regex matches http(s)://, ftp://, and www. URLs
+        const urlRegex = /(https?:\/\/[^\s\)]+|ftp:\/\/[^\s\)]+|www\.[^\s\)]+)/g;
+
+        // Replace URLs with markdown link syntax
+        return content.replace(urlRegex, (match, offset, string) => {
+            // Check if this URL is already part of a markdown link [text](url)
+            const before = string.substring(Math.max(0, offset - 10), offset);
+
+            // Skip if it's already a markdown link or HTML link
+            if (before.includes('](') || before.includes('href="') || before.includes("href='")) {
+                return match;
+            }
+
+            let url = match;
+
+            // Ensure www. URLs have a protocol
+            if (url.startsWith('www.')) {
+                url = 'https://' + url;
+            }
+
+            // Return as markdown link syntax
+            return `[${match}](${url})`;
+        });
     }
 
     // Utility
