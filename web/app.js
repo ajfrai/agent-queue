@@ -567,8 +567,8 @@ class AgentQueue {
 
         // Tap to open detail modal
         div.addEventListener('click', (e) => {
-            // Don't open modal if clicking a button or flag
-            if (e.target.closest('button') || e.target.closest('.task-flag')) {
+            // Don't open modal if clicking a button or flag or drag handle
+            if (e.target.closest('button') || e.target.closest('.task-flag') || e.target.closest('.drag-handle')) {
                 return;
             }
             this.openTaskModal(task);
@@ -582,20 +582,32 @@ class AgentQueue {
             : '';
 
         div.innerHTML = `
-            <div class="task-header">
-                <div class="task-title">${this.escapeHtml(task.title)}</div>
-                <div class="task-status status-${task.status}">${task.status}</div>
+            <div class="drag-handle" title="Drag to reorder">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <circle cx="6" cy="4" r="1.5"/>
+                    <circle cx="10" cy="4" r="1.5"/>
+                    <circle cx="6" cy="8" r="1.5"/>
+                    <circle cx="10" cy="8" r="1.5"/>
+                    <circle cx="6" cy="12" r="1.5"/>
+                    <circle cx="10" cy="12" r="1.5"/>
+                </svg>
             </div>
-            <div class="task-description">${this.escapeHtml(task.description)}</div>
-            ${commentHtml}
-            <div class="task-meta">
-                <span>P${task.priority}</span>
-                ${task.complexity ? `<span>${task.complexity}</span>` : ''}
-                <span>${createdAt}</span>
+            <div class="task-content">
+                <div class="task-header">
+                    <div class="task-title">${this.escapeHtml(task.title)}</div>
+                    <div class="task-status status-${task.status}">${task.status}</div>
+                </div>
+                <div class="task-description">${this.escapeHtml(task.description)}</div>
+                ${commentHtml}
+                <div class="task-meta">
+                    <span>P${task.priority}</span>
+                    ${task.complexity ? `<span>${task.complexity}</span>` : ''}
+                    <span>${createdAt}</span>
+                </div>
+                ${this.renderTaskBadges(task)}
+                ${this.renderTaskFlags(task, isActive, isDecompose)}
+                ${this.renderTaskActions(task)}
             </div>
-            ${this.renderTaskBadges(task)}
-            ${this.renderTaskFlags(task, isActive, isDecompose)}
-            ${this.renderTaskActions(task)}
         `;
 
         return div;
