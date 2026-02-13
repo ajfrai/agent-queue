@@ -120,6 +120,22 @@ class AgentQueue {
             await this.createTask();
         });
 
+        const importForm = document.getElementById('import-repo-form');
+        if (importForm) {
+            importForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await this.importRepo();
+            });
+        }
+
+        const newProjectForm = document.getElementById('new-project-form');
+        if (newProjectForm) {
+            newProjectForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await this.createNewProject();
+            });
+        }
+
         document.getElementById('close-session').addEventListener('click', () => {
             document.getElementById('session-viewer').classList.add('hidden');
         });
@@ -952,21 +968,35 @@ class AgentQueue {
 
     // Drag and drop
     setupDragAndDrop() {
-        const taskItems = document.querySelectorAll('#task-list .task-item');
+        const taskList = document.getElementById('task-list');
+        const taskItems = taskList.querySelectorAll('.task-item');
 
         taskItems.forEach(item => {
             item.addEventListener('dragstart', this.handleDragStart.bind(this));
             item.addEventListener('dragover', this.handleDragOver.bind(this));
+            item.addEventListener('dragenter', this.handleDragEnter.bind(this));
+            item.addEventListener('dragleave', this.handleDragLeave.bind(this));
             item.addEventListener('drop', this.handleDrop.bind(this));
             item.addEventListener('dragend', this.handleDragEnd.bind(this));
         });
+
+        // Add dragover to the container to show drop indicator
+        taskList.addEventListener('dragover', this.handleContainerDragOver.bind(this));
     }
 
     handleDragStart(e) {
+        this.draggedElement = e.currentTarget;
+        this.draggedTaskId = e.currentTarget.dataset.taskId;
+
         e.currentTarget.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/html', e.currentTarget.innerHTML);
         e.dataTransfer.setData('task-id', e.currentTarget.dataset.taskId);
+
+        // Set drag image to be slightly transparent
+        setTimeout(() => {
+            e.currentTarget.style.opacity = '0.5';
+        }, 0);
     }
 
     handleDragOver(e) {
@@ -974,44 +1004,103 @@ class AgentQueue {
             e.preventDefault();
         }
         e.dataTransfer.dropEffect = 'move';
+
+        const afterElement = this.getDragAfterElement(e.currentTarget.parentNode, e.clientY);
+        const dragging = document.querySelector('.dragging');
+
+        if (afterElement == null) {
+            e.currentTarget.parentNode.appendChild(dragging);
+        } else {
+            e.currentTarget.parentNode.insertBefore(dragging, afterElement);
+        }
+
         return false;
+    }
+
+    handleDragEnter(e) {
+        e.preventDefault();
+        const target = e.currentTarget;
+
+        // Don't add hover class to the dragged element itself
+        if (target.classList.contains('dragging')) return;
+
+        target.classList.add('drag-over');
+    }
+
+    handleDragLeave(e) {
+        const target = e.currentTarget;
+        target.classList.remove('drag-over');
+    }
+
+    handleContainerDragOver(e) {
+        e.preventDefault();
+        const taskList = document.getElementById('task-list');
+        const afterElement = this.getDragAfterElement(taskList, e.clientY);
+        const dragging = document.querySelector('.dragging');
+
+        if (dragging) {
+            if (afterElement == null) {
+                taskList.appendChild(dragging);
+            } else {
+                taskList.insertBefore(dragging, afterElement);
+            }
+        }
+    }
+
+    getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.task-item:not(.dragging)')];
+
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
     }
 
     handleDrop(e) {
         if (e.stopPropagation) {
             e.stopPropagation();
         }
+        e.preventDefault();
 
-        const draggedTaskId = e.dataTransfer.getData('task-id');
-        const targetTaskId = e.currentTarget.dataset.taskId;
-
-        if (draggedTaskId !== targetTaskId) {
-            this.reorderTasks(draggedTaskId, targetTaskId);
-        }
+        const target = e.currentTarget;
+        target.classList.remove('drag-over');
 
         return false;
     }
 
     handleDragEnd(e) {
-        e.currentTarget.classList.remove('dragging');
+        const dragging = e.currentTarget;
+        dragging.classList.remove('dragging');
+        dragging.style.opacity = '1';
+
+        // Remove drag-over class from all elements
+        document.querySelectorAll('.task-item').forEach(item => {
+            item.classList.remove('drag-over');
+        });
+
+        // Calculate new positions based on DOM order
+        if (this.draggedElement) {
+            this.saveNewOrder();
+            this.draggedElement = null;
+            this.draggedTaskId = null;
+        }
     }
 
-    async reorderTasks(draggedId, targetId) {
-        const draggedTask = this.tasks.find(t => t.id == draggedId);
-        const targetTask = this.tasks.find(t => t.id == targetId);
+    async saveNewOrder() {
+        const taskList = document.getElementById('task-list');
+        const taskItems = [...taskList.querySelectorAll('.task-item')];
 
-        if (!draggedTask || !targetTask) return;
-
-        const newPositions = [];
-        this.tasks.forEach(task => {
-            if (task.id == draggedId) {
-                newPositions.push({ id: task.id, position: targetTask.position });
-            } else if (task.id == targetId) {
-                newPositions.push({ id: task.id, position: draggedTask.position });
-            } else {
-                newPositions.push({ id: task.id, position: task.position });
-            }
-        });
+        // Build new position array based on current DOM order
+        const newPositions = taskItems.map((item, index) => ({
+            id: parseInt(item.dataset.taskId),
+            position: index
+        }));
 
         try {
             const response = await fetch('/api/tasks/reorder', {
@@ -1021,10 +1110,16 @@ class AgentQueue {
             });
 
             if (response.ok) {
+                // Silently update local state without full reload
+                await this.loadTasks();
+            } else {
+                // Revert on error
                 await this.loadTasks();
             }
         } catch (error) {
             console.error('Error reordering tasks:', error);
+            // Revert on error
+            await this.loadTasks();
         }
     }
 
