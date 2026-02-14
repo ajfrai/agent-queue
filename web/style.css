@@ -172,7 +172,12 @@ button:hover {
 
 button:active {
     background: #1e40af;
-    transform: scale(0.98);
+}
+
+button:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+    opacity: 0.7;
 }
 
 /* Task queue */
@@ -771,6 +776,17 @@ button:active {
     color: #1d4ed8;
 }
 
+.badge-pr {
+    background: #dbeafe;
+    color: #1e40af;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.badge-pr:hover {
+    background: #bfdbfe;
+}
+
 .badge-error {
     background: #fee2e2;
     color: #991b1b;
@@ -887,6 +903,7 @@ button:active {
     align-items: flex-end;
     z-index: 501;
     padding: 0;
+    pointer-events: none;
 }
 
 .modal.hidden {
@@ -903,6 +920,7 @@ button:active {
     -webkit-overflow-scrolling: touch;
     display: flex;
     flex-direction: column;
+    pointer-events: auto;
 }
 
 @media (min-width: 768px) {

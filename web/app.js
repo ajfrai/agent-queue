@@ -244,6 +244,18 @@ class AgentQueue {
         document.getElementById('modal-task-complexity').textContent = task.complexity || '-';
         document.getElementById('modal-task-created').textContent = new Date(task.created_at).toLocaleDateString();
 
+        // Show PR link if available
+        const prLinkContainer = document.getElementById('modal-pr-link');
+        if (prLinkContainer) {
+            if (task.metadata && task.metadata.pr_url) {
+                prLinkContainer.innerHTML = `<a href="${this.escapeHtml(task.metadata.pr_url)}" target="_blank" rel="noopener" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:13px;padding:6px 12px;">View PR</a>`;
+                prLinkContainer.classList.remove('hidden');
+            } else {
+                prLinkContainer.innerHTML = '';
+                prLinkContainer.classList.add('hidden');
+            }
+        }
+
         // Render flags
         const flagsContainer = document.getElementById('modal-flags');
         if (['completed', 'failed', 'cancelled', 'decomposed', 'ready_for_review'].includes(task.status)) {
@@ -376,9 +388,14 @@ class AgentQueue {
     }
 
     async createTask() {
-        const title = document.getElementById('task-title').value;
-        const description = document.getElementById('task-description').value;
+        const title = document.getElementById('task-title').value.trim();
+        const description = document.getElementById('task-description').value.trim();
         const priority = parseInt(document.getElementById('task-priority').value);
+
+        if (!title) return;
+
+        const submitBtn = document.querySelector('#create-task-form button[type="submit"]');
+        submitBtn.disabled = true;
 
         try {
             const response = await fetch('/api/tasks', {
@@ -396,6 +413,8 @@ class AgentQueue {
         } catch (error) {
             console.error('Error creating task:', error);
             alert('Failed to create task');
+        } finally {
+            submitBtn.disabled = false;
         }
     }
 
@@ -602,6 +621,10 @@ class AgentQueue {
 
         if (task.parent_task_id) {
             badges.push(`<span class="task-badge badge-child">Subtask of #${task.parent_task_id}</span>`);
+        }
+
+        if (m.pr_url) {
+            badges.push(`<a href="${this.escapeHtml(m.pr_url)}" target="_blank" rel="noopener" class="task-badge badge-pr" onclick="event.stopPropagation()">PR</a>`);
         }
 
         if (m.error) {

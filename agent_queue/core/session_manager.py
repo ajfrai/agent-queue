@@ -56,7 +56,10 @@ class SessionManager:
             logger.error(f"Failed to create session: {e}")
             return None
 
-    async def start_session(self, session_id: int, task_description: str) -> bool:
+    async def start_session(
+        self, session_id: int, task_description: str,
+        resume_claude_session_id: Optional[str] = None,
+    ) -> bool:
         """Start a Claude Code CLI session."""
         try:
             session = await db.get_session(session_id)
@@ -83,7 +86,10 @@ class SessionManager:
 
             # Start monitoring the session in background
             monitor_task = asyncio.create_task(
-                self._run_and_monitor_session(session_id, session, task_description)
+                self._run_and_monitor_session(
+                    session_id, session, task_description,
+                    resume_claude_session_id=resume_claude_session_id,
+                )
             )
             self._monitor_tasks[session_id] = monitor_task
 
@@ -96,7 +102,8 @@ class SessionManager:
             return False
 
     async def _run_and_monitor_session(
-        self, session_id: int, session: Session, task_description: str
+        self, session_id: int, session: Session, task_description: str,
+        resume_claude_session_id: Optional[str] = None,
     ):
         """Run the Claude CLI subprocess and monitor its output."""
         try:
@@ -134,6 +141,7 @@ class SessionManager:
                 stderr_path=Path(session.stderr_path),
                 on_output=output_callback,
                 on_json_event=json_event_callback,
+                resume_session_id=resume_claude_session_id,
             )
 
             exit_code = result["exit_code"]
@@ -163,6 +171,13 @@ class SessionManager:
             claude_session_id = None
             if result_json:
                 claude_session_id = result_json.get("session_id")
+
+            # Store Claude session ID for potential resume
+            if claude_session_id:
+                await db.update_session(
+                    session_id,
+                    SessionUpdate(claude_session_id=claude_session_id)
+                )
 
             # Determine final status
             if result.get("error"):

@@ -330,6 +330,7 @@ class TaskScheduler:
 
             # Include comment history so Claude sees reviewer feedback
             comments = await db.list_comments(task_id)
+            resume_claude_session_id = None
             if comments:
                 prompt_parts.append("---\n## Comment history")
                 for c in comments:
@@ -338,6 +339,24 @@ class TaskScheduler:
                     "\nThis task was previously attempted. A reviewer sent it back. "
                     "Address the feedback in the comments above, then continue."
                 )
+
+                # Look up previous session's Claude session ID for resume
+                previous_sessions = await db.list_sessions(task_id=task_id)
+                for prev in previous_sessions:
+                    if prev.claude_session_id:
+                        resume_claude_session_id = prev.claude_session_id
+                        break  # Most recent first (ordered by created_at DESC)
+
+            # Instruct Claude to read the codebase before making changes
+            prompt_parts.append(
+                "---\n"
+                "## Before you start\n"
+                "Read and understand the existing code before making any changes. "
+                "Use Glob, Grep, and Read tools to explore the project structure, "
+                "understand the architecture, and find the relevant files. "
+                "Do NOT start writing code until you understand how the existing "
+                "codebase works and where your changes fit."
+            )
 
             # Git/PR instructions — prevent Claude from doing harness work
             prompt_parts.append(
@@ -360,10 +379,13 @@ class TaskScheduler:
             )
             session_prompt = "\n\n".join(prompt_parts)
 
-            # Start the session
+            # Start the session (resume previous if rework)
+            if resume_claude_session_id:
+                logger.info(f"Resuming Claude session {resume_claude_session_id} for task {task_id}")
             success = await session_manager.start_session(
                 session.id,
-                session_prompt
+                session_prompt,
+                resume_claude_session_id=resume_claude_session_id,
             )
 
             if not success:
@@ -443,30 +465,39 @@ class TaskScheduler:
             if task.project_id and branch_name:
                 project = await db.get_project(task.project_id)
                 if project and project.git_repo:
-                    # Use worktree path for commit if available, else fall back
-                    commit_dir = Path(worktree_path_str) if worktree_path_str else Path(project.working_directory)
                     repo_dir = Path(repo_dir_str) if repo_dir_str else Path(project.working_directory)
-                    try:
-                        await git_manager.commit_and_push(
-                            commit_dir, branch_name,
-                            f"Task #{task_id}: {task.title}"
-                        )
-                        pr_url = await git_manager.create_pr(
-                            project.git_repo,
-                            branch_name,
-                            task.title,
-                            review_comment[:65000],
-                            commit_dir,
-                        )
-                        await db.update_task(
-                            task_id,
-                            TaskUpdate(metadata={"pr_url": pr_url})
-                        )
-                        review_comment += f"\n\n**Pull Request:** {pr_url}"
-                        logger.info(f"Created PR for task {task_id}: {pr_url}")
-                    except Exception as e:
-                        logger.warning(f"Failed to create PR for task {task_id}: {e}")
-                        review_comment += f"\n\n*Auto-PR failed: {e}*"
+
+                    # Use worktree path for commit if it exists, else fall back
+                    commit_dir = None
+                    if worktree_path_str and Path(worktree_path_str).exists():
+                        commit_dir = Path(worktree_path_str)
+                    elif repo_dir.exists():
+                        commit_dir = repo_dir
+                    else:
+                        logger.warning(f"No valid working directory for task {task_id} PR")
+
+                    if commit_dir:
+                        try:
+                            await git_manager.commit_and_push(
+                                commit_dir, branch_name,
+                                f"Task #{task_id}: {task.title}"
+                            )
+                            pr_url = await git_manager.create_pr(
+                                project.git_repo,
+                                branch_name,
+                                task.title,
+                                review_comment[:65000],
+                                commit_dir,
+                            )
+                            await db.update_task(
+                                task_id,
+                                TaskUpdate(metadata={"pr_url": pr_url})
+                            )
+                            review_comment += f"\n\n**Pull Request:** {pr_url}"
+                            logger.info(f"Created PR for task {task_id}: {pr_url}")
+                        except Exception as e:
+                            logger.warning(f"Failed to create PR for task {task_id}: {e}")
+                            review_comment += f"\n\n*Auto-PR failed: {e}*"
 
                     # Clean up worktree — code is on the remote branch now
                     if worktree_path_str:

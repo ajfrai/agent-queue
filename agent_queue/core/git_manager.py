@@ -28,7 +28,7 @@ async def _run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        cwd=cwd,
+        cwd=str(cwd) if cwd else None,
     )
     stdout, stderr = await proc.communicate()
     return proc.returncode, stdout.decode().strip(), stderr.decode().strip()
@@ -235,7 +235,13 @@ async def create_worktree(repo_dir: Path, branch_name: str) -> Path:
 
     # Ensure we're up to date on default branch
     default = await get_default_branch(repo_dir)
-    await _run(["git", "fetch", "origin"], cwd=repo_dir)
+    await _run(["git", "fetch", "origin", "--prune"], cwd=repo_dir)
+
+    # Fast-forward local default branch to match origin (works even if not checked out)
+    await _run(
+        ["git", "update-ref", f"refs/heads/{default}", f"refs/remotes/origin/{default}"],
+        cwd=repo_dir,
+    )
 
     # Create worktree with new branch from origin/default
     rc, out, err = await _run(

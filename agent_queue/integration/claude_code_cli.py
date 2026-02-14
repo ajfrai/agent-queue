@@ -39,6 +39,7 @@ class ClaudeCodeCLI:
         on_output: Optional[Callable[[str], Awaitable[None]]] = None,
         on_json_event: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
         timeout: int = DEFAULT_TIMEOUT,
+        resume_session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run a task using claude -p --output-format stream-json.
 
@@ -51,6 +52,7 @@ class ClaudeCodeCLI:
             on_output: Async callback for each text chunk
             on_json_event: Async callback for each JSON event
             timeout: Total timeout for the task
+            resume_session_id: Claude session ID to resume (preserves context)
 
         Returns:
             Dict with keys: exit_code, result_json, is_rate_limited, error
@@ -69,6 +71,9 @@ class ClaudeCodeCLI:
             "Bash(git checkout:*)", "Bash(git branch:*)", "Bash(git merge:*)",
             "Bash(git rebase:*)", "Bash(gh pr:*)", "Bash(gh repo:*)",
         ]
+
+        if resume_session_id:
+            cmd.extend(["--resume", resume_session_id])
 
         if model:
             cmd.extend(["--model", model])

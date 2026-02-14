@@ -88,6 +88,7 @@ class SessionUpdate(BaseModel):
     turn_count: Optional[int] = None
     pid: Optional[int] = None
     exit_code: Optional[int] = None
+    claude_session_id: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     last_heartbeat: Optional[datetime] = None
